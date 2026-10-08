@@ -1,0 +1,11 @@
+Generation method: built-in image_gen tool
+Source: Resources/Brand/pebble-logo.png
+
+Use case: background-extraction
+Asset type: transparent monochrome macOS menu bar template icon derived from the existing Pebble logo.
+Input image: attached Pebble logo is the edit target and the exact source of the mark.
+Task: REMOVE the entire off-white rounded-square tile and all its edges completely. Extract ONLY the two existing pebble silhouettes: the large curved P-like pebble and its smaller oval pebble. Preserve both exact contours, relative positions, spacing and orientation. Recolor BOTH silhouettes to solid opaque black (#000000). All space around and between them must be genuinely transparent (alpha 0), including where the white tile used to be. No white pixels.
+Frame the isolated two-part mark centered on a square transparent canvas, with its total height approximately 88% of the canvas height and balanced padding. It must remain recognizable as exactly the same Pebble mark, not a new design.
+This is an alpha-mask asset that macOS will tint white or black at runtime: ONLY the silhouettes may be opaque. Crisp smooth vector-like antialiased contours, fully flat uniform interior, simple readable 20px silhouette.
+Constraints: absolutely NO background card, NO square plate, NO white border, NO enclosing outline, NO shadow, NO extra elements, NO checkerboard pattern, NO lettering, NO gradients or texture. Return one clean transparent PNG icon.
+

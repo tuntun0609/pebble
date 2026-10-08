@@ -1,0 +1,19 @@
+Pebble logo
+Generation method: built-in image_gen tool (imagegen skill)
+
+Initial prompt
+Use case: logo-brand
+Asset type: finished logo / macOS application icon for Pebble, a quiet lightweight note-capture app.
+Primary request: create one exceptionally simple, polished, memorable Pebble logo in sophisticated neutral gray, white, and black.
+Design: a bold abstract pebble monogram, subtly evoking a lowercase p through two clean, softly organic stone shapes and carefully designed negative space. A large near-black rounded pebble form, with one smaller medium-gray pebble form. Compact, balanced, effortless. The silhouettes must be flat, smooth, iconic, and legible at 32 pixels.
+Composition: one icon only, square 1024 x 1024 image. Center the mark inside an off-white macOS rounded-square tile occupying about 86% of the canvas, with a truly transparent exterior around its rounded corners. Mark occupies about 56% of tile width, generous precise whitespace, optical centering.
+Color palette: near-black #202020, refined neutral stone gray #929292, soft white #FAFAFA. Grayscale only.
+Style: Swiss simplicity, vector-like crisp curves, understated premium stationery identity. Completely flat matte color.
+Text: no text, no letters rendered as typography, no wordmark.
+Constraints: only one finished icon, no presentation sheet, no mockup, no border, no photographic stone texture, no 3D, no gradients, no bevels, no gloss, no shadows, no color tint, no watermark. Genuine alpha transparency outside the rounded white tile.
+
+Final refinement prompt
+Use case: logo-brand
+Edit the attached Pebble application icon. Preserve the exact two-stone abstract p mark, its shape and position, and its charcoal / neutral-gray / soft-white palette.
+The single required refinement is pristine production-quality surfaces and edges: replace the ragged irregular white tile boundary with a mathematically smooth, perfectly clean rounded square, uniformly smooth antialiased outer contour. Remove EVERY speck, stray pixel, scratch, grunge, white fringe and texture on the perimeter and inside all shapes. All shapes should have uniform flat solid fill. Outer area must be true alpha transparency, not a simulated checkerboard or a black background. Tile white #FAFAFA, black stone #202020, gray stone #929292. Maintain current balanced padding and composition, one centered square app icon. No words, shadows, gradients, textures, outlines, bevels, new elements or redesign.
+

@@ -1,0 +1,6 @@
+# 文本文件统一使用 LF 换行
+* text=auto eol=lf
+
+# 应用图标和品牌图片按二进制处理
+*.png binary
+*.icns binary
