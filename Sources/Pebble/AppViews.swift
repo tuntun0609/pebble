@@ -635,6 +635,11 @@ struct SettingsView: View {
           Text("English").tag(AppLanguage.english)
           Text("简体中文").tag(AppLanguage.chinese)
         }
+        HStack {
+          Text(tr("Version", "版本"))
+          Spacer()
+          Text(Self.appVersion).foregroundStyle(.secondary)
+        }
       }
       Section {
         HStack {
@@ -703,6 +708,12 @@ struct SettingsView: View {
   }
   private func shortcutRow(_ title: String, _ keys: String) -> some View {
     HStack { Text(title); Spacer(); Text(keys).foregroundStyle(.secondary).font(.system(.caption, design: .monospaced)) }
+  }
+  private static var appVersion: String {
+    let info = Bundle.main.infoDictionary
+    let short = info?["CFBundleShortVersionString"] as? String ?? "—"
+    guard let build = info?["CFBundleVersion"] as? String, build != short else { return short }
+    return "\(short) (\(build))"
   }
 }
 
