@@ -32,6 +32,43 @@ open "build/Pebble.app"
 
 修改源码后，重新运行构建脚本并重启应用即可。
 
+构建脚本默认生成当前架构、本地临时签名的应用，也可通过环境变量调整（CI 使用）：`VERSION` 注入版本号、`ARCHS="arm64 x86_64"` 生成通用二进制、`SIGN_IDENTITY` 指定签名身份、`ENTITLEMENTS` 指定权限文件。
+
+## 自动发布
+
+推送 `v` 开头的标签（如 `v1.1.0`）即可触发 GitHub Actions（`.github/workflows/release.yml`）自动构建并发布。标签中的版本号会写入 `Info.plist`，是每次发布的唯一来源。流程会在 `macos-latest` 上编译 `arm64 + x86_64` 通用二进制，打包成 `Pebble-<版本>.dmg`（含 `/Applications` 拖拽安装）和 `Pebble-<版本>.zip`，连同 `SHA256` 校验和一起发布到 GitHub Releases。
+
+发布版本：
+
+```sh
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+### macOS 不拦截（签名与公证）
+
+签名是可选的，取决于是否配置了仓库 Secrets：
+
+- **未配置证书**：应用为 ad-hoc 临时签名。用户下载后首次打开会被 Gatekeeper 拦截，需要右键 **打开**，或执行 `xattr -dr com.apple.quarantine /Applications/Pebble.app` 去除隔离属性。
+- **配置证书**：应用用 Developer ID 在 hardened runtime 下签名，DMG 经 Apple 公证（notarisation）并 staple，用户双击即可运行，无任何拦截提示。这需要付费的 Apple Developer 账号。
+
+在仓库 **Settings → Secrets and variables → Actions** 中配置以下 Secrets 即可启用签名与公证：
+
+| Secret | 说明 |
+| --- | --- |
+| `MAC_CERTIFICATE_P12` | Developer ID Application 证书（.p12）的 base64 内容 |
+| `MAC_CERTIFICATE_PASSWORD` | 上述 .p12 的导出密码 |
+| `APPLE_API_KEY_P8` | App Store Connect API 私钥（.p8）内容（推荐） |
+| `APPLE_API_KEY_ID` | API Key ID |
+| `APPLE_API_ISSUER` | Issuer ID |
+| `APPLE_ID` | 无 API Key 时改用：Apple 账号邮箱 |
+| `APPLE_APP_SPECIFIC_PASSWORD` | 无 API Key 时改用：应用专用密码 |
+| `APPLE_TEAM_ID` | 无 API Key 时改用：团队 ID |
+
+生成 `MAC_CERTIFICATE_P12`：在「钥匙串访问」中选中 *Developer ID Application* 证书及其私钥，右键 **导出** 为 `.p12` 并设置密码，再执行 `base64 -i Certificates.p12 | pbcopy` 粘贴到 Secret。公证凭据二选一：优先使用 App Store Connect API Key（`APPLE_API_KEY_P8` / `APPLE_API_KEY_ID` / `APPLE_API_ISSUER`），否则使用 Apple ID（`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`）。
+
+也可以在 **Actions → Release → Run workflow** 手动触发，输入不带 `v` 前缀的版本号（如 `1.1.0`）。
+
 ## 日常使用
 
 ### 记录与整理
