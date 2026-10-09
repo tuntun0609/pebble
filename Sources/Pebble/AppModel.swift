@@ -121,6 +121,28 @@ final class AppModel: ObservableObject {
     selection = []
     showToast(LocalizedMessage("Deleted · ⌘Z to undo", "已删除 · 按 ⌘Z 撤销"))
   }
+  var completedCount: Int { store.notes.filter(\.isDone).count }
+  func completedCount(in sectionID: UUID) -> Int {
+    store.notes.filter { $0.isDone && $0.sectionID == sectionID }.count
+  }
+  func clearCompleted(in sectionID: UUID? = nil) {
+    let count = sectionID == nil ? completedCount : completedCount(in: sectionID!)
+    guard count > 0 else { return }
+    let alert = NSAlert()
+    alert.messageText = tr("Clear Completed", "清理已完成")
+    alert.informativeText = count == 1
+      ? tr("Delete 1 completed note? You can undo with ⌘Z.", "删除 1 条已完成的笔记？可按 ⌘Z 撤销。")
+      : tr("Delete \(count) completed notes? You can undo with ⌘Z.", "删除 \(count) 条已完成的笔记？可按 ⌘Z 撤销。")
+    alert.addButton(withTitle: tr("Clear", "清理"))
+    alert.addButton(withTitle: tr("Cancel", "取消"))
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    let removed = store.removeCompleted(in: sectionID)
+    guard removed > 0 else { return }
+    selection = []
+    showToast(removed == 1
+      ? LocalizedMessage("Cleared 1 completed note · ⌘Z to undo", "已清理 1 条已完成 · 按 ⌘Z 撤销")
+      : LocalizedMessage("Cleared \(removed) completed notes · ⌘Z to undo", "已清理 \(removed) 条已完成 · 按 ⌘Z 撤销"))
+  }
   func mergeSelection() {
     guard let id = store.merge(ids: visibleSelection) else { return }
     selection = [id]

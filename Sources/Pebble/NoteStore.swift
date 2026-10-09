@@ -121,6 +121,14 @@ final class NoteStore: ObservableObject {
     return first.id
   }
 
+  @discardableResult
+  func removeCompleted(in sectionID: UUID? = nil) -> Int {
+    let ids = Set(notes.filter { $0.isDone && (sectionID == nil || $0.sectionID == sectionID) }.map(\.id))
+    guard !ids.isEmpty else { return 0 }
+    remove(ids: ids)
+    return ids.count
+  }
+
   func move(ids: Set<UUID>, to sectionID: UUID) {
     guard sections.contains(where: { $0.id == sectionID }) else { return }
     let now = Date()

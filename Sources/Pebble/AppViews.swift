@@ -249,6 +249,8 @@ struct PebblePanelView: View {
         Button(tr("New Section…", "新建分组…"), systemImage: "folder.badge.plus") { model.askSectionName() }
         Divider()
         Toggle(tr("Show Completed", "显示已完成"), isOn: $model.showCompleted)
+        Button(tr("Clear Completed", "清理已完成"), systemImage: "checkmark.circle.badge.xmark") { model.clearCompleted() }
+          .disabled(model.completedCount == 0)
         Toggle(tr("Always on Top", "始终置顶"), isOn: $model.alwaysOnTop)
         Divider()
         Button(tr("Undo", "撤销"), systemImage: "arrow.uturn.backward") { store.undo() }.disabled(!store.canUndo)
@@ -354,8 +356,10 @@ struct PebblePanelView: View {
         .accessibilityLabel(tr("Rename section “\(section.name)”", "重命名分组“\(section.name)”"))
       }.padding(.horizontal, 10).contentShape(Rectangle())
         .contextMenu {
-          Button(tr("Add Note Here", "在此添加笔记")) { model.activeSectionID = section.id; model.composerFocus += 1 }
-          Button(tr("Rename Section…", "重命名分组…")) { model.askSectionName(existing: section) }
+           Button(tr("Add Note Here", "在此添加笔记")) { model.activeSectionID = section.id; model.composerFocus += 1 }
+           Button(tr("Rename Section…", "重命名分组…")) { model.askSectionName(existing: section) }
+           Button(tr("Clear Completed Here", "清理本组已完成")) { model.clearCompleted(in: section.id) }
+             .disabled(model.completedCount(in: section.id) == 0)
           if store.sections.count > 1 {
             Button(tr("Delete Section (Keep Notes)", "删除分组（保留笔记）"), role: .destructive) {
               store.deleteSection(id: section.id)
