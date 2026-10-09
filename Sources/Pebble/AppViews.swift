@@ -574,7 +574,7 @@ struct PebblePanelView: View {
       HStack(spacing: 6) {
         Spacer()
         Button(tr("Cancel", "取消")) { dismissNewSection() }.buttonStyle(.bordered)
-        Button(tr("Create", "创建")) { createSection() }.buttonStyle(.borderedProminent).tint(.primary)
+        Button(tr("Create", "创建")) { createSection() }.buttonStyle(.borderedProminent)
           .disabled(newSectionName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
       }.controlSize(.small)
     }
