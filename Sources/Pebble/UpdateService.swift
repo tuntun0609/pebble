@@ -101,11 +101,15 @@ final class UpdateService: ObservableObject {
     do {
       let release = try await fetchFeed()
       if release.version == installedVersion {
+        latest = nil
         state = .ready(release.version)
       } else if Self.isNewer(release.version, than: currentVersion) {
         latest = release
         state = .available(release.version)
       } else {
+        // The feed holds nothing newer for this build — drop any release a
+        // previous check had stashed so a later install can't pick it up.
+        latest = nil
         state = .upToDate(currentVersion)
       }
     } catch {
@@ -254,9 +258,15 @@ final class UpdateService: ObservableObject {
   // MARK: Feed
 
   private func fetchFeed() async throws -> UpdateRelease {
-    var request = URLRequest(url: feedURL)
-    request.timeoutInterval = 30
+    // Never serve a cached copy of the feed: a shared session keeps responses
+    // in URLCache and may reuse them without revalidating, so a check right
+    // after a release publishes can report an older version until the app is
+    // relaunched with a fresh cache.
+    var request = URLRequest(url: feedURL,
+                             cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
+                             timeoutInterval: 30)
     request.setValue("Pebble/\(currentVersion)", forHTTPHeaderField: "User-Agent")
+    request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
     let (data, response) = try await URLSession.shared.data(for: request)
     guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
       throw UpdateError.badFeed
