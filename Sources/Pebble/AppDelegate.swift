@@ -10,12 +10,14 @@ final class FloatingPanel: NSPanel {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   let store: NoteStore
   let capture = CaptureService()
+  let updates = UpdateService()
   let model: AppModel
   private var panel: FloatingPanel!
   private var statusItem: NSStatusItem!
   private var settingsWindow: NSWindow?
   private var editorWindows: [UUID: NSWindow] = [:]
   private var keyboardMonitor: Any?
+  private var updateTimer: Timer?
 
   override init() {
     let arguments = CommandLine.arguments
@@ -38,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     model.onEditInWindow = { [weak self] id in self?.openEditor(id) }
     model.onFocusCards = { [weak self] in self?.panel.makeFirstResponder(nil) }
     model.onWindowSettingsChanged = { [weak self] in self?.applyWindowSettings() }
+    updates.onInstalled = { [weak self] version in self?.promptToRestart(version: version) }
+    startAutomaticUpdates()
     capture.onCapture = { [weak self] text in
       guard let self else { return }
       if let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -64,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     store.save()
     capture.stop()
     if let keyboardMonitor { NSEvent.removeMonitor(keyboardMonitor) }
+    updateTimer?.invalidate()
   }
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -131,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 510, height: 660),
                             styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
       window.title = tr("Pebble Settings", "Pebble 设置")
-      window.contentView = NSHostingView(rootView: SettingsView(model: model, capture: capture))
+      window.contentView = NSHostingView(rootView: SettingsView(model: model, capture: capture, updates: updates))
       window.isReleasedWhenClosed = false
       window.center()
       settingsWindow = window
@@ -184,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     menu.addItem(.separator())
     menu.addItem(item(tr("Settings…", "设置…"), action: #selector(showSettings)))
     menu.addItem(item(tr("Show Local Files", "打开本地文件夹"), action: #selector(showLocalFiles)))
+    menu.addItem(item(tr("Check for Updates…", "检查更新…"), action: #selector(checkForUpdates)))
     menu.addItem(.separator())
     menu.addItem(item(tr("Quit Pebble", "退出 Pebble"), action: #selector(quit), key: "q"))
     statusItem.menu = menu
@@ -225,6 +231,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   }
   @objc private func quit() { NSApp.terminate(nil) }
   @objc private func showLocalFiles() { NSWorkspace.shared.open(store.directory) }
+
+  private func startAutomaticUpdates() {
+    guard !updates.isDevBuild else { return }
+    // Ask once shortly after launch, then a few times a day. The random
+    // offset keeps many installs behind one NAT from polling in lockstep.
+    Task { [weak self] in
+      try? await Task.sleep(nanoseconds: 3_000_000_000)
+      await self?.updates.check(userInitiated: false)
+    }
+    let interval: TimeInterval = 6 * 3600
+    updateTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+      Task { @MainActor in await self?.updates.check(userInitiated: false) }
+    }
+    updateTimer?.fireDate = Date().addingTimeInterval(interval + Double.random(in: 0...600))
+  }
+  @objc private func checkForUpdates() {
+    Task { await updates.check(userInitiated: true) }
+    showSettings()
+  }
+  private func promptToRestart(version: String) {
+    let alert = NSAlert()
+    alert.messageText = tr("Pebble \(version) is ready", "Pebble \(version) 已就绪")
+    alert.informativeText = tr("Restart to use the new version.", "重启后即可使用新版本。")
+    alert.addButton(withTitle: tr("Restart Now", "立即重启"))
+    alert.addButton(withTitle: tr("Later", "稍后"))
+    NSApp.activate(ignoringOtherApps: true)
+    if alert.runModal() == .alertFirstButtonReturn { updates.restartNow() }
+  }
   @objc private func undoAction() {
     if let text = NSApp.keyWindow?.firstResponder as? NSTextView { text.undoManager?.undo() } else { store.undo() }
   }

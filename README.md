@@ -36,7 +36,7 @@ open "build/Pebble.app"
 
 ## 自动发布
 
-推送 `v` 开头的标签（如 `v1.1.0`）即可触发 GitHub Actions（`.github/workflows/release.yml`）自动构建并发布。标签中的版本号会写入 `Info.plist`，是每次发布的唯一来源。流程会在 `macos-latest` 上编译 `arm64 + x86_64` 通用二进制，打包成 `Pebble-<版本>.dmg`（含 `/Applications` 拖拽安装）和 `Pebble-<版本>.zip`，连同 `SHA256` 校验和一起发布到 GitHub Releases。
+推送 `v` 开头的标签（如 `v1.1.0`）即可触发 GitHub Actions（`.github/workflows/release.yml`）自动构建并发布。标签中的版本号会写入 `Info.plist`，是每次发布的唯一来源。流程会在 `macos-latest` 上编译 `arm64 + x86_64` 通用二进制，打包成 `Pebble-<版本>.dmg`（含 `/Applications` 拖拽安装）和 `Pebble-<版本>.zip`，生成更新源 `latest.json`，连同 `SHA256` 校验和一起发布到 GitHub Releases。
 
 发布版本：
 
@@ -44,6 +44,23 @@ open "build/Pebble.app"
 git tag v1.1.0
 git push origin v1.1.0
 ```
+
+### 应用内自动更新
+
+每次发布都会上传一份 `latest.json` 到 Release，应用通过 GitHub 的固定地址读取它：
+
+```text
+https://github.com/tuntun0609/pebble/releases/latest/download/latest.json
+```
+
+启动约 3 秒后检查一次，之后每 6 小时检查一次。可在 **设置 → 通用 → 检查更新** 手动检查，或关闭自动检查；菜单栏菜单中也有 **检查更新…**。发现新版本时会自动下载 zip，依次校验 SHA256、包标识和版本号，再用 `codesign` 确认签名与当前应用同一开发者，然后替换应用包并提示重启生效。
+
+- 更新只替换应用本身，笔记和偏好设置不受影响。
+- 本地 `./build.sh`（未设置 `VERSION`）构建的是开发版本，不参与自动更新；发布版由 workflow 注入版本号并标记为 release。
+- 更新检查走 Release 资产地址而不是 GitHub REST API，不消耗匿名 API 每小时 60 次的额度，用户规模增长不受影响。
+- 若应用从 App Translocation 临时路径（首次直接从下载目录打开）或只读卷运行，更新会拒绝并提示先把应用移到 **应用程序**。
+- 配置 Developer ID 与公证后，更新后的应用不会触发 Gatekeeper；未配置证书时应用内更新同样不会被拦截，只是手动下载替换仍会触发。
+- 若 fork 或改名仓库，需要同步修改 `Sources/Pebble/UpdateService.swift` 里的 `defaultFeed` 地址。
 
 ### macOS 不拦截（签名与公证）
 

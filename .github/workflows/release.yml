@@ -163,6 +163,24 @@ jobs:
           shasum -a 256 "$DMG" "Pebble-$VERSION.zip" > "Pebble-$VERSION.sha256"
           cat "Pebble-$VERSION.sha256"
 
+      # The feed the app reads through GitHub's stable alias
+      # .../releases/latest/download/latest.json. No REST API, so no
+      # 60-per-hour rate limit for any number of users.
+      - name: Generate update feed
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          ZIP_SHA=$(awk '$2 ~ /\.zip$/ {print $1}' "Pebble-$VERSION.sha256")
+          cat > latest.json <<EOF
+          {
+            "version": "$VERSION",
+            "zip": "Pebble-$VERSION.zip",
+            "url": "https://github.com/${GITHUB_REPOSITORY}/releases/download/v$VERSION/Pebble-$VERSION.zip",
+            "sha256": "$ZIP_SHA",
+            "page": "https://github.com/${GITHUB_REPOSITORY}/releases/tag/v$VERSION"
+          }
+          EOF
+          cat latest.json
+
       - name: Remove signing keychain
         if: always() && steps.signing.outputs.enabled == 'true'
         run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
@@ -177,3 +195,4 @@ jobs:
             ${{ env.DMG }}
             Pebble-${{ steps.ver.outputs.version }}.zip
             Pebble-${{ steps.ver.outputs.version }}.sha256
+            latest.json

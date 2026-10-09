@@ -624,6 +624,7 @@ struct PebblePanelView: View {
 struct SettingsView: View {
   @ObservedObject var model: AppModel
   @ObservedObject var capture: CaptureService
+  @ObservedObject var updates: UpdateService
   @ObservedObject private var localization = Localization.shared
   @State private var recording = false
   @State private var loginEnabled = SMAppService.mainApp.status == .enabled
@@ -640,6 +641,7 @@ struct SettingsView: View {
           Spacer()
           Text(Self.appVersion).foregroundStyle(.secondary)
         }
+        updateRow
       }
       Section {
         HStack {
@@ -708,6 +710,48 @@ struct SettingsView: View {
   }
   private func shortcutRow(_ title: String, _ keys: String) -> some View {
     HStack { Text(title); Spacer(); Text(keys).foregroundStyle(.secondary).font(.system(.caption, design: .monospaced)) }
+  }
+  @ViewBuilder private var updateRow: some View {
+    if updates.isDevBuild {
+      Text(tr("Development build — automatic updates are off.", "开发版本，自动更新已关闭。"))
+        .font(.caption).foregroundStyle(.secondary)
+    } else {
+      HStack {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(updateStatus)
+            .font(.callout)
+          if case .downloading(let progress) = updates.state {
+            ProgressView(value: progress).frame(width: 220)
+          }
+        }
+        Spacer()
+        Button(tr("Check for Updates", "检查更新")) {
+          Task { await updates.check(userInitiated: true) }
+        }
+        .disabled(updates.isBusy)
+      }
+      Toggle(tr("Check for updates automatically", "自动检查更新"), isOn: $updates.autoUpdate)
+    }
+  }
+  private var updateStatus: String {
+    switch updates.state {
+    case .idle:
+      return tr("Up to date", "已是最新")
+    case .checking:
+      return tr("Checking for updates…", "正在检查更新…")
+    case .upToDate(let version):
+      return tr("Version \(version) is the latest.", "已是最新版本 \(version)。")
+    case .available(let version):
+      return tr("Version \(version) is available.", "发现新版本 \(version)。")
+    case .downloading:
+      return tr("Downloading…", "正在下载…")
+    case .installing:
+      return tr("Installing…", "正在安装…")
+    case .ready(let version):
+      return tr("Version \(version) is ready — restart to use it.", "版本 \(version) 已就绪，重启后生效。")
+    case .failed(let message):
+      return message
+    }
   }
   private static var appVersion: String {
     let info = Bundle.main.infoDictionary

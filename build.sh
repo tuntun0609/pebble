@@ -51,6 +51,11 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 if [ -n "$VERSION" ]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :PebbleChannel string release" "$APP/Contents/Info.plist"
+else
+  # A local build (no VERSION) never replaces itself; the updater only runs
+  # in builds the release workflow produced.
+  /usr/libexec/PlistBuddy -c "Add :PebbleChannel string dev" "$APP/Contents/Info.plist"
 fi
 
 if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"; fi
