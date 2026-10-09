@@ -392,6 +392,10 @@ struct PebblePanelView: View {
       ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
         noteCard(note)
           .padding(.vertical, 4)
+          .transition(.asymmetric(
+            insertion: .identity,
+            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
+          ))
           .modifier(ItemDropModifier(areaID: "note-\(note.id)", sectionID: section.id,
                                      sectionHeight: sectionHeight, moveSection: reorderSection,
                                      splitsArea: true, autoScroller: autoScroller, position: dropPositionBinding) { id, after in

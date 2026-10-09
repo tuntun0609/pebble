@@ -112,8 +112,10 @@ final class AppModel: ObservableObject {
   }
   func markDone(_ ids: Set<UUID>? = nil) {
     let targets = ids ?? visibleSelection
-    store.toggleDone(ids: targets)
-    if !showCompleted { selection.subtract(targets) }
+    withAnimation(.easeOut(duration: 0.18)) {
+      store.toggleDone(ids: targets)
+      if !showCompleted { selection.subtract(targets) }
+    }
   }
   func deleteSelection() {
     guard !visibleSelection.isEmpty else { return }
