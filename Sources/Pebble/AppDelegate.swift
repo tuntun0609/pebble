@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         self.model.composerFocus += 1
       }
     }
+    capture.onTogglePanel = { [weak self] in self?.togglePanel() }
     capture.onStatus = { [weak self] text in self?.model.showToast(text) }
     capture.start()
     keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -128,12 +129,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
   }
   @objc private func togglePanel() {
-    if panel.isVisible && panel.isKeyWindow { hidePanel() } else { showPanel(activate: true) }
+    // When triggered by the global shortcut, the panel may be visible but not
+    // key (another app is focused); treat that as "show" so the shortcut
+    // always brings Pebble forward instead of hiding a background panel.
+    if panel.isVisible && (panel.isKeyWindow || NSApp.isActive) { hidePanel() } else { showPanel(activate: true) }
   }
   @objc private func captureNow() { capture.captureSelection() }
   @objc private func showSettings() {
     if settingsWindow == nil {
-      let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 510, height: 660),
+      let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 510, height: 700),
                             styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
       window.title = tr("Pebble Settings", "Pebble 设置")
       window.contentView = NSHostingView(rootView: SettingsView(model: model, capture: capture, updates: updates))

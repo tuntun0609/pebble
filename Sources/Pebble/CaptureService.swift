@@ -33,6 +33,12 @@ struct CaptureShortcut: Codable, Equatable {
 
 @MainActor
 final class CaptureService: ObservableObject {
+  /// The global hot keys Pebble listens for: capturing selected text, and
+  /// toggling the panel's visibility from anywhere.
+  enum HotKeySlot {
+    case capture, togglePanel
+  }
+
   @Published var isTrusted = AXIsProcessTrusted()
   @Published private(set) var shortcut: CaptureShortcut {
     didSet {
@@ -43,32 +49,39 @@ final class CaptureService: ObservableObject {
   @Published private(set) var usesDoubleShift: Bool {
     didSet { defaults.set(usesDoubleShift, forKey: "captureUsesDoubleShift"); resetGesture() }
   }
+  @Published private(set) var panelShortcut: CaptureShortcut {
+    didSet {
+      if let data = try? JSONEncoder().encode(panelShortcut) { defaults.set(data, forKey: "panelShortcut") }
+    }
+  }
+  @Published private(set) var panelShortcutEnabled: Bool {
+    didSet { defaults.set(panelShortcutEnabled, forKey: "panelShortcutEnabled") }
+  }
 
   var onCapture: ((String?) -> Void)?
+  var onTogglePanel: (() -> Void)?
   var onStatus: ((LocalizedMessage) -> Void)?
   var lastSourceApplication: NSRunningApplication?
   var recordingShortcut = false {
-    didSet {
-      resetGesture()
-      guard running else { return }
-      // Release the old combination so the recorder can receive it too.
-      if recordingShortcut { unregisterHotKey() }
-      else { activateSavedShortcut() }
-    }
+    didSet { syncHotKeys() }
+  }
+  var recordingPanelShortcut = false {
+    didSet { syncHotKeys() }
   }
   var shortcutLabel: String { usesDoubleShift ? "⇧ ⇧" : shortcut.label }
+  var panelShortcutLabel: String { panelShortcutEnabled ? panelShortcut.label : tr("Off", "关闭") }
 
   private let defaults: UserDefaults
   private let selectionQueue = DispatchQueue(label: "local.pebble.selection", qos: .userInitiated)
   private var globalMonitor: Any?
   private var localMonitor: Any?
   private var permissionTimer: Timer?
-  private var hotKey: EventHotKeyRef?
+  private var hotKeys: [HotKeySlot: EventHotKeyRef] = [:]
+  private var hotKeyIDs: [UInt32: HotKeySlot] = [:]
   private var hotKeyHandler: EventHandlerRef?
-  private var registeredShortcut: CaptureShortcut?
-  private var hotKeyID: UInt32 = 0
+  private var registeredShortcuts: [HotKeySlot: CaptureShortcut] = [:]
   private var nextHotKeyID: UInt32 = 0
-  private var hotKeyIsDown = false
+  private var hotKeyIsDown: [UInt32: Bool] = [:]
   private var running = false
   private var shiftDownAt: TimeInterval?
   private var firstShiftUpAt: TimeInterval?
@@ -85,6 +98,10 @@ final class CaptureService: ObservableObject {
       .flatMap { try? JSONDecoder().decode(CaptureShortcut.self, from: $0) }
       ?? CaptureShortcut(keyCode: 49, modifiers: NSEvent.ModifierFlags([.command, .shift]).rawValue)
     usesDoubleShift = defaults.object(forKey: "captureUsesDoubleShift") as? Bool ?? true
+    panelShortcut = defaults.data(forKey: "panelShortcut")
+      .flatMap { try? JSONDecoder().decode(CaptureShortcut.self, from: $0) }
+      ?? CaptureShortcut(keyCode: 49, modifiers: NSEvent.ModifierFlags([.command, .option]).rawValue)
+    panelShortcutEnabled = defaults.object(forKey: "panelShortcutEnabled") as? Bool ?? false
   }
 
   func start() {
@@ -92,7 +109,7 @@ final class CaptureService: ObservableObject {
     refreshPermission()
     running = true
     installMonitors()
-    activateSavedShortcut()
+    activateSavedShortcuts()
     permissionTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
       DispatchQueue.main.async { self?.refreshPermission() }
     }
@@ -103,7 +120,7 @@ final class CaptureService: ObservableObject {
     permissionTimer?.invalidate()
     permissionTimer = nil
     removeMonitors()
-    unregisterHotKey()
+    unregisterAllHotKeys()
     if let hotKeyHandler { RemoveEventHandler(hotKeyHandler) }
     hotKeyHandler = nil
     activeRequest = nil
@@ -125,49 +142,100 @@ final class CaptureService: ObservableObject {
   }
 
   func setShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
-    let flags = modifiers.intersection(Self.shortcutModifiers)
-    guard ![54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode) else {
-      onStatus?(LocalizedMessage("Choose a letter, number, or function key for your shortcut.", "请选择字母、数字或功能键作为快捷键。"))
-      return
-    }
-    guard !flags.intersection([.command, .option, .control]).isEmpty else {
-      onStatus?(LocalizedMessage("Include Command, Option, or Control in your shortcut.", "快捷键须包含 Command、Option 或 Control。"))
-      return
-    }
-    let candidate = CaptureShortcut(keyCode: keyCode, modifiers: flags.rawValue)
+    guard let candidate = validate(keyCode: keyCode, modifiers: modifiers) else { return }
     if running {
-      let status = registerHotKey(candidate)
-      guard status == noErr else {
-        onStatus?(status == eventHotKeyExistsErr
-          ? LocalizedMessage("That shortcut is already in use. Your previous shortcut is unchanged.", "该快捷键已被占用，已保留原快捷键。")
-          : LocalizedMessage("Couldn't register that shortcut (\(status)). Your previous shortcut is unchanged.", "无法注册该快捷键（\(status)），已保留原快捷键。"))
-        return
-      }
+      let status = registerHotKey(candidate, slot: .capture)
+      guard status == noErr else { reportRegistrationFailure(status); return }
     }
     shortcut = candidate
     usesDoubleShift = false
   }
 
   func resetShortcut() {
-    unregisterHotKey()
+    unregisterHotKey(.capture)
     usesDoubleShift = true
   }
 
-  private func activateSavedShortcut() {
-    guard running, !usesDoubleShift, !recordingShortcut else { return }
-    let status = registerHotKey(shortcut)
-    if status != noErr {
-      unregisterHotKey()
-      usesDoubleShift = true
-      onStatus?(LocalizedMessage("Your saved shortcut is unavailable (\(status)). Double Shift is enabled instead.", "已保存的快捷键不可用（\(status)），已改为双击 Shift。"))
+  func setPanelShortcut(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) {
+    guard let candidate = validate(keyCode: keyCode, modifiers: modifiers) else { return }
+    if running {
+      let status = registerHotKey(candidate, slot: .togglePanel)
+      guard status == noErr else { reportRegistrationFailure(status); return }
+    }
+    panelShortcut = candidate
+    panelShortcutEnabled = true
+  }
+
+  func resetPanelShortcut() {
+    unregisterHotKey(.togglePanel)
+    panelShortcutEnabled = false
+  }
+
+  private func validate(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> CaptureShortcut? {
+    let flags = modifiers.intersection(Self.shortcutModifiers)
+    guard ![54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(keyCode) else {
+      onStatus?(LocalizedMessage("Choose a letter, number, or function key for your shortcut.", "请选择字母、数字或功能键作为快捷键。"))
+      return nil
+    }
+    guard !flags.intersection([.command, .option, .control]).isEmpty else {
+      onStatus?(LocalizedMessage("Include Command, Option, or Control in your shortcut.", "快捷键须包含 Command、Option 或 Control。"))
+      return nil
+    }
+    return CaptureShortcut(keyCode: keyCode, modifiers: flags.rawValue)
+  }
+
+  private func reportRegistrationFailure(_ status: OSStatus) {
+    onStatus?(status == eventHotKeyExistsErr
+      ? LocalizedMessage("That shortcut is already in use. Your previous shortcut is unchanged.", "该快捷键已被占用，已保留原快捷键。")
+      : LocalizedMessage("Couldn't register that shortcut (\(status)). Your previous shortcut is unchanged.", "无法注册该快捷键（\(status)），已保留原快捷键。"))
+  }
+
+  /// Applies the persisted configuration to the live hot key registrations.
+  /// A slot is released while its recorder is active so the new combination
+  /// reaches the recorder instead of firing the action.
+  private func syncHotKeys() {
+    guard running else { return }
+    if !usesDoubleShift, !recordingShortcut, !conflictsWithOtherSlots(shortcut, slot: .capture) {
+      _ = registerHotKey(shortcut, slot: .capture)
+    } else {
+      unregisterHotKey(.capture)
+    }
+    if panelShortcutEnabled, !recordingPanelShortcut, !conflictsWithOtherSlots(panelShortcut, slot: .togglePanel) {
+      _ = registerHotKey(panelShortcut, slot: .togglePanel)
+    } else {
+      unregisterHotKey(.togglePanel)
     }
   }
 
-  private func registerHotKey(_ candidate: CaptureShortcut) -> OSStatus {
+  private func conflictsWithOtherSlots(_ candidate: CaptureShortcut, slot: HotKeySlot) -> Bool {
+    registeredShortcuts.contains { $0.key != slot && $0.value == candidate }
+  }
+
+  private func activateSavedShortcuts() {
+    guard running else { return }
+    if !usesDoubleShift, !recordingShortcut, !conflictsWithOtherSlots(shortcut, slot: .capture) {
+      let status = registerHotKey(shortcut, slot: .capture)
+      if status != noErr {
+        unregisterHotKey(.capture)
+        usesDoubleShift = true
+        onStatus?(LocalizedMessage("Your saved shortcut is unavailable (\(status)). Double Shift is enabled instead.", "已保存的快捷键不可用（\(status)），已改为双击 Shift。"))
+      }
+    }
+    if panelShortcutEnabled, !recordingPanelShortcut, !conflictsWithOtherSlots(panelShortcut, slot: .togglePanel) {
+      let status = registerHotKey(panelShortcut, slot: .togglePanel)
+      if status != noErr {
+        unregisterHotKey(.togglePanel)
+        panelShortcutEnabled = false
+        onStatus?(LocalizedMessage("Your saved panel shortcut is unavailable (\(status)). It has been turned off.", "已保存的面板快捷键不可用（\(status)），已关闭。"))
+      }
+    }
+  }
+
+  private func registerHotKey(_ candidate: CaptureShortcut, slot: HotKeySlot) -> OSStatus {
     let flags = NSEvent.ModifierFlags(rawValue: candidate.modifiers)
     guard candidate.keyCode < 128, ![54, 55, 56, 57, 58, 59, 60, 61, 62, 63].contains(candidate.keyCode),
           !flags.intersection([.command, .option, .control]).isEmpty else { return OSStatus(paramErr) }
-    if hotKey != nil, registeredShortcut == candidate { return noErr }
+    if hotKeys[slot] != nil, registeredShortcuts[slot] == candidate { return noErr }
     if hotKeyHandler == nil {
       let types = [
         EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
@@ -203,32 +271,46 @@ final class CaptureService: ObservableObject {
     let status = RegisterEventHotKey(UInt32(candidate.keyCode), carbonFlags, identifier,
                                      GetApplicationEventTarget(), OptionBits(kEventHotKeyExclusive), &replacement)
     guard status == noErr, let replacement else { return status == noErr ? OSStatus(paramErr) : status }
-    let previous = hotKey
-    hotKey = replacement
-    hotKeyID = identifier.id
-    registeredShortcut = candidate
-    hotKeyIsDown = false
-    if let previous { UnregisterEventHotKey(previous) }
+    if let previous = hotKeys[slot] { UnregisterEventHotKey(previous) }
+    hotKeys[slot] = replacement
+    hotKeyIDs = hotKeyIDs.filter { $0.value != slot }
+    hotKeyIDs[identifier.id] = slot
+    registeredShortcuts[slot] = candidate
+    hotKeyIsDown[identifier.id] = false
     return noErr
   }
 
-  private func unregisterHotKey() {
-    if let hotKey { UnregisterEventHotKey(hotKey) }
-    hotKey = nil
-    registeredShortcut = nil
-    hotKeyIsDown = false
+  private func unregisterHotKey(_ slot: HotKeySlot) {
+    if let hotKey = hotKeys[slot] { UnregisterEventHotKey(hotKey) }
+    hotKeys[slot] = nil
+    hotKeyIDs = hotKeyIDs.filter { $0.value != slot }
+    registeredShortcuts[slot] = nil
+  }
+
+  private func unregisterAllHotKeys() {
+    for slot in [HotKeySlot.capture, .togglePanel] { unregisterHotKey(slot) }
+    hotKeyIsDown = [:]
   }
 
   private func handleHotKey(_ identifier: EventHotKeyID, kind: UInt32) -> OSStatus {
-    guard identifier.signature == Self.hotKeySignature, identifier.id == hotKeyID else {
+    guard identifier.signature == Self.hotKeySignature, let slot = hotKeyIDs[identifier.id] else {
       return OSStatus(eventNotHandledErr)
     }
-    guard running, hotKey != nil, !usesDoubleShift, !recordingShortcut else { return noErr }
-    if kind == UInt32(kEventHotKeyPressed) {
-      hotKeyIsDown = true
-    } else if kind == UInt32(kEventHotKeyReleased), hotKeyIsDown {
-      hotKeyIsDown = false
-      captureSelection()
+    guard running, hotKeys[slot] != nil else { return noErr }
+    switch slot {
+    case .capture:
+      guard !usesDoubleShift, !recordingShortcut else { return noErr }
+      if kind == UInt32(kEventHotKeyPressed) {
+        hotKeyIsDown[identifier.id] = true
+      } else if kind == UInt32(kEventHotKeyReleased), hotKeyIsDown[identifier.id] == true {
+        hotKeyIsDown[identifier.id] = false
+        captureSelection()
+      }
+    case .togglePanel:
+      guard !recordingPanelShortcut else { return noErr }
+      // Toggle on key-down so the panel reacts immediately and doesn't
+      // reappear if the user holds the combination while switching focus.
+      if kind == UInt32(kEventHotKeyPressed) { onTogglePanel?() }
     }
     return noErr
   }

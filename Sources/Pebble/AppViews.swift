@@ -627,6 +627,7 @@ struct SettingsView: View {
   @ObservedObject var updates: UpdateService
   @ObservedObject private var localization = Localization.shared
   @State private var recording = false
+  @State private var recordingPanel = false
   @State private var loginEnabled = SMAppService.mainApp.status == .enabled
   @State private var loginError: String?
   var body: some View {
@@ -666,6 +667,21 @@ struct SettingsView: View {
             capture.recordingShortcut = false
           }.frame(height: 38)
         }
+        HStack {
+          Text(tr("Show / Hide panel", "显示 / 隐藏面板"))
+          Spacer()
+          Text(capture.panelShortcutLabel).font(.system(.body, design: .monospaced))
+          Button(recordingPanel ? tr("Cancel", "取消") : tr("Record…", "录制…")) { recordingPanel.toggle(); capture.recordingPanelShortcut = recordingPanel }
+          Button(tr("Off", "关闭")) { capture.resetPanelShortcut(); recordingPanel = false; capture.recordingPanelShortcut = false }
+            .disabled(!capture.panelShortcutEnabled)
+        }
+        if recordingPanel {
+          ShortcutRecorder { event in
+            if event.keyCode != 53 { capture.setPanelShortcut(keyCode: event.keyCode, modifiers: event.modifierFlags) }
+            recordingPanel = false
+            capture.recordingPanelShortcut = false
+          }.frame(height: 38)
+        }
         Text(tr("When direct capture is unavailable, Pebble briefly uses Copy and restores the previous clipboard if it is still unchanged. You can always paste a note manually.", "无法直接捕获时，Pebble 会短暂使用复制功能，并在剪贴板未被其他操作更改时恢复原有内容。你也可以手动粘贴笔记。"))
           .font(.caption).foregroundStyle(.secondary)
       } header: { Text(tr("Capture", "捕获")) }
@@ -703,10 +719,13 @@ struct SettingsView: View {
         shortcutRow(tr("Edit in new window / Merge", "在新窗口编辑 / 合并"), tr("⌘Return / ⇧⌘M", "⌘回车 / ⇧⌘M"))
         shortcutRow(tr("Undo / Redo / Hide", "撤销 / 重做 / 隐藏"), "⌘Z / ⇧⌘Z / Esc")
       }
-    }.formStyle(.grouped).padding(8).frame(width: 510, height: 660)
+    }.formStyle(.grouped).padding(8).frame(width: 510, height: 700)
       .preferredColorScheme(model.colorScheme)
       .onAppear { capture.refreshPermission() }
-      .onDisappear { capture.recordingShortcut = false }
+      .onDisappear {
+        capture.recordingShortcut = false
+        capture.recordingPanelShortcut = false
+      }
   }
   private func shortcutRow(_ title: String, _ keys: String) -> some View {
     HStack { Text(title); Spacer(); Text(keys).foregroundStyle(.secondary).font(.system(.caption, design: .monospaced)) }
