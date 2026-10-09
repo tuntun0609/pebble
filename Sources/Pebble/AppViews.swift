@@ -744,6 +744,12 @@ struct SettingsView: View {
           }
         }
         Spacer()
+        if case .available = updates.state {
+          Button(tr("Update Now", "立即更新")) {
+            Task { await updates.installAvailable() }
+          }
+          .buttonStyle(.borderedProminent)
+        }
         Button(tr("Check for Updates", "检查更新")) {
           Task { await updates.check(userInitiated: true) }
         }

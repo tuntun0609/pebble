@@ -250,8 +250,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     updateTimer?.fireDate = Date().addingTimeInterval(interval + Double.random(in: 0...600))
   }
+  /// The menu bar never shows update dialogs. It just kicks off a check (when
+  /// one isn't already settled) and opens Settings, where the update row
+  /// offers the download action.
   @objc private func checkForUpdates() {
-    Task { await updates.check(userInitiated: true) }
+    if case .available = updates.state {} else {
+      Task { await updates.check(userInitiated: true) }
+    }
     showSettings()
   }
   private func promptToRestart(version: String) {

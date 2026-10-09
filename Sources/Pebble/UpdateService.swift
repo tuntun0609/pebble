@@ -87,8 +87,9 @@ final class UpdateService: ObservableObject {
 
   // MARK: Check
 
-  /// Looks for a newer release. A user-initiated check installs it outright;
-  /// an automatic one does too when `autoUpdate` is on.
+  /// Looks for a newer release. Whatever the outcome, nothing is downloaded
+  /// until the user confirms — `installAvailable()` is the only path that
+  /// starts a download.
   func check(userInitiated: Bool) async {
     guard !isBusy else { return }
     guard !isDevBuild else {
@@ -103,11 +104,7 @@ final class UpdateService: ObservableObject {
         state = .ready(release.version)
       } else if Self.isNewer(release.version, than: currentVersion) {
         latest = release
-        if userInitiated || autoUpdate {
-          await downloadAndInstall(release)
-        } else {
-          state = .available(release.version)
-        }
+        state = .available(release.version)
       } else {
         state = .upToDate(currentVersion)
       }
