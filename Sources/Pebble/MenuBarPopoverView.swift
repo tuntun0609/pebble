@@ -9,6 +9,7 @@ struct MenuBarPopoverView: View {
   @Environment(\.colorScheme) private var colorScheme
   @State private var query = ""
   @State private var copiedID: UUID?
+  @State private var copyResetTask: Task<Void, Never>?
 
   let onOpenMainPanel: () -> Void
 
@@ -74,7 +75,10 @@ struct MenuBarPopoverView: View {
     // A separate rounded background exposes its backing at the mismatched corners.
     .preferredColorScheme(model.colorScheme)
     .onChange(of: store.notes) { _, _ in
-      if let copiedID, !store.notes.contains(where: { $0.id == copiedID }) { self.copiedID = nil }
+      if let copiedID, !store.notes.contains(where: { $0.id == copiedID }) {
+        copyResetTask?.cancel()
+        self.copiedID = nil
+      }
     }
   }
 
@@ -184,25 +188,7 @@ struct MenuBarPopoverView: View {
         .onTapGesture { copy(note) }
         .help(tr("Click to copy", "点击复制"))
 
-      if note.isPinned {
-        Button { store.setPinned(ids: [note.id], to: false) } label: {
-          Image(systemName: "pin.fill")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.accentColor)
-            .frame(width: 18, height: 20)
-        }
-        .buttonStyle(.plain)
-        .help(tr("Unpin note", "取消置顶"))
-        .accessibilityLabel(tr("Unpin note", "取消置顶"))
-      }
-
-      Image(systemName: "checkmark")
-        .font(.system(size: 10, weight: .semibold))
-        .foregroundStyle(Color.accentColor)
-        .padding(.top, 3)
-        .frame(width: 18, height: 20, alignment: .topTrailing)
-        .opacity(copiedID == note.id ? 1 : 0)
-        .accessibilityHidden(true)
+      noteTrailingIcon(note)
     }
     .padding(.horizontal, 13)
     .padding(.vertical, 12)
@@ -236,10 +222,46 @@ struct MenuBarPopoverView: View {
   private func copy(_ note: Note) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(note.text, forType: .string)
+    copyResetTask?.cancel()
     withAnimation(.easeOut(duration: 0.15)) { copiedID = note.id }
-    Task { @MainActor in
-      try? await Task.sleep(nanoseconds: 1_200_000_000)
-      if copiedID == note.id { withAnimation(.easeIn(duration: 0.15)) { copiedID = nil } }
+    copyResetTask = Task { @MainActor in
+      try? await Task.sleep(nanoseconds: 1_500_000_000)
+      guard !Task.isCancelled, copiedID == note.id else { return }
+      withAnimation(.easeInOut(duration: 0.15)) { copiedID = nil }
+    }
+  }
+
+  @ViewBuilder
+  private func noteTrailingIcon(_ note: Note) -> some View {
+    let isCopied = copiedID == note.id
+
+    if note.isPinned {
+      Button {
+        guard !isCopied else { return }
+        store.setPinned(ids: [note.id], to: false)
+      } label: {
+        ZStack {
+          Image(systemName: "pin.fill")
+            .font(.system(size: 12, weight: .medium))
+            .opacity(isCopied ? 0 : 1)
+          Image(systemName: "checkmark")
+            .font(.system(size: 10, weight: .semibold))
+            .opacity(isCopied ? 1 : 0)
+        }
+        .foregroundStyle(Color.accentColor)
+        .frame(width: 18, height: 20)
+      }
+      .buttonStyle(.plain)
+      .disabled(isCopied)
+      .help(isCopied ? tr("Copied", "已复制") : tr("Unpin note", "取消置顶"))
+      .accessibilityLabel(isCopied ? tr("Copied", "已复制") : tr("Unpin note", "取消置顶"))
+    } else {
+      Image(systemName: "checkmark")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(Color.accentColor)
+        .frame(width: 18, height: 20)
+        .opacity(isCopied ? 1 : 0)
+        .accessibilityHidden(true)
     }
   }
 }
