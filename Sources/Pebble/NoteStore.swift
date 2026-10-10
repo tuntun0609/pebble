@@ -6,8 +6,36 @@ struct Note: Identifiable, Codable, Equatable {
   var text: String
   var sectionID: UUID
   var isDone: Bool
+  var isPinned: Bool
   var createdAt: Date
   var updatedAt: Date
+
+  private enum CodingKeys: String, CodingKey {
+    case id, text, sectionID, isDone, isPinned, createdAt, updatedAt
+  }
+
+  init(id: UUID, text: String, sectionID: UUID, isDone: Bool, isPinned: Bool = false,
+       createdAt: Date, updatedAt: Date) {
+    self.id = id
+    self.text = text
+    self.sectionID = sectionID
+    self.isDone = isPinned ? false : isDone
+    self.isPinned = isPinned
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+  }
+
+  init(from decoder: Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    let isPinned = try values.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    self.init(id: try values.decode(UUID.self, forKey: .id),
+              text: try values.decode(String.self, forKey: .text),
+              sectionID: try values.decode(UUID.self, forKey: .sectionID),
+              isDone: try values.decode(Bool.self, forKey: .isDone),
+              isPinned: isPinned,
+              createdAt: try values.decode(Date.self, forKey: .createdAt),
+              updatedAt: try values.decode(Date.self, forKey: .updatedAt))
+  }
 }
 
 struct NoteSection: Identifiable, Codable, Equatable {
@@ -78,7 +106,7 @@ final class NoteStore: ObservableObject {
 
   func update(id: UUID, text: String) {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, let index = notes.firstIndex(where: { $0.id == id }),
+    guard !text.isEmpty, let index = notes.firstIndex(where: { $0.id == id && !$0.isPinned }),
           notes[index].text != text else { return }
     var next = snapshot
     next.notes[index].text = text
@@ -87,12 +115,12 @@ final class NoteStore: ObservableObject {
   }
 
   func toggleDone(ids: Set<UUID>) {
-    let selected = notes.filter { ids.contains($0.id) }
+    let selected = notes.filter { ids.contains($0.id) && !$0.isPinned }
     guard !selected.isEmpty else { return }
     let isDone = !selected.allSatisfy(\.isDone)
     let now = Date()
     var next = snapshot
-    for index in next.notes.indices where ids.contains(next.notes[index].id) {
+    for index in next.notes.indices where ids.contains(next.notes[index].id) && !next.notes[index].isPinned {
       if next.notes[index].isDone != isDone {
         next.notes[index].isDone = isDone
         next.notes[index].updatedAt = now
@@ -103,7 +131,38 @@ final class NoteStore: ObservableObject {
 
   func remove(ids: Set<UUID>) {
     var next = snapshot
-    next.notes.removeAll { ids.contains($0.id) }
+    next.notes.removeAll { ids.contains($0.id) && !$0.isPinned }
+    commit(next)
+  }
+
+  func setPinned(ids: Set<UUID>, to isPinned: Bool) {
+    let changing = notes.filter { ids.contains($0.id) && $0.isPinned != isPinned }
+    guard !changing.isEmpty else { return }
+    let changingIDs = Set(changing.map(\.id))
+    let now = Date()
+    var next = snapshot
+    for index in next.notes.indices where changingIDs.contains(next.notes[index].id) {
+      next.notes[index].isPinned = isPinned
+      if isPinned { next.notes[index].isDone = false }
+      next.notes[index].updatedAt = now
+    }
+
+    for section in sections {
+      let moved = next.notes.filter { changingIDs.contains($0.id) && $0.sectionID == section.id }
+      guard !moved.isEmpty else { continue }
+      let movedIDs = Set(moved.map(\.id))
+      next.notes.removeAll { movedIDs.contains($0.id) }
+      let insertion: Int
+      if isPinned,
+         let firstPinned = next.notes.firstIndex(where: { $0.sectionID == section.id && $0.isPinned }) {
+        insertion = firstPinned
+      } else if let firstUnpinned = next.notes.firstIndex(where: { $0.sectionID == section.id && !$0.isPinned }) {
+        insertion = firstUnpinned
+      } else {
+        insertion = next.notes.lastIndex(where: { $0.sectionID == section.id }).map { $0 + 1 } ?? next.notes.endIndex
+      }
+      next.notes.insert(contentsOf: moved, at: insertion)
+    }
     commit(next)
   }
 
@@ -111,6 +170,7 @@ final class NoteStore: ObservableObject {
   func merge(ids: Set<UUID>) -> UUID? {
     let selected = sections.flatMap { section in notes.filter { $0.sectionID == section.id && ids.contains($0.id) } }
     guard selected.count > 1, let first = selected.first,
+          selected.allSatisfy({ !$0.isPinned }),
           let index = notes.firstIndex(where: { $0.id == first.id }) else { return nil }
     var next = snapshot
     next.notes[index].text = selected.map(\.text).joined(separator: "\n\n")
@@ -133,7 +193,7 @@ final class NoteStore: ObservableObject {
     guard sections.contains(where: { $0.id == sectionID }) else { return }
     let now = Date()
     var next = snapshot
-    for index in next.notes.indices where ids.contains(next.notes[index].id) {
+    for index in next.notes.indices where ids.contains(next.notes[index].id) && !next.notes[index].isPinned {
       if next.notes[index].sectionID != sectionID {
         next.notes[index].sectionID = sectionID
         next.notes[index].updatedAt = now
@@ -163,7 +223,8 @@ final class NoteStore: ObservableObject {
 
   func deleteSection(id: UUID, deleteNotes: Bool = false) {
     guard sections.count > 1, sections.contains(where: { $0.id == id }),
-          let destination = sections.first(where: { $0.id != id }) else { return }
+          let destination = sections.first(where: { $0.id != id }),
+          !notes.contains(where: { $0.sectionID == id && $0.isPinned }) else { return }
     var next = snapshot
     next.sections.removeAll { $0.id == id }
     if deleteNotes {
@@ -195,20 +256,33 @@ final class NoteStore: ObservableObject {
   func reorder(noteID: UUID, to sectionID: UUID, before destinationID: UUID? = nil) -> Bool {
     guard sections.contains(where: { $0.id == sectionID }),
           let index = notes.firstIndex(where: { $0.id == noteID }) else { return false }
+    let source = notes[index]
+    guard !source.isPinned || source.sectionID == sectionID else { return false }
     if let destinationID {
       guard noteID != destinationID,
             notes.contains(where: { $0.id == destinationID && $0.sectionID == sectionID }) else { return false }
     }
     var next = snapshot
     var note = next.notes.remove(at: index)
+    note.sectionID = sectionID
     let destination: Int
     if let destinationID {
-      guard let anchor = next.notes.firstIndex(where: { $0.id == destinationID }) else { return false }
-      destination = anchor
+      guard let anchor = next.notes.firstIndex(where: { $0.id == destinationID && $0.sectionID == sectionID }) else { return false }
+      let target = next.notes[anchor]
+      if target.isPinned == note.isPinned {
+        destination = anchor
+      } else {
+        destination = next.notes.firstIndex(where: { $0.sectionID == sectionID && !$0.isPinned })
+          ?? (next.notes.lastIndex(where: { $0.sectionID == sectionID }).map { $0 + 1 } ?? next.notes.endIndex)
+      }
     } else {
-      destination = next.notes.lastIndex(where: { $0.sectionID == sectionID }).map { $0 + 1 } ?? next.notes.endIndex
+      if note.isPinned {
+        destination = next.notes.firstIndex(where: { $0.sectionID == sectionID && !$0.isPinned })
+          ?? (next.notes.lastIndex(where: { $0.sectionID == sectionID }).map { $0 + 1 } ?? next.notes.endIndex)
+      } else {
+        destination = next.notes.lastIndex(where: { $0.sectionID == sectionID }).map { $0 + 1 } ?? next.notes.endIndex
+      }
     }
-    note.sectionID = sectionID
     next.notes.insert(note, at: destination)
     if notes[index].sectionID == sectionID,
        notes.filter({ $0.sectionID == sectionID }).map(\.id)

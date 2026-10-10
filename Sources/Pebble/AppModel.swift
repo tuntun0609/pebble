@@ -28,6 +28,7 @@ final class AppModel: ObservableObject {
   var onHide: (() -> Void)?
   var onShowSettings: (() -> Void)?
   var onEditInWindow: ((UUID) -> Void)?
+  var onPinnedNotes: ((Set<UUID>) -> Void)?
   var onFocusCards: (() -> Void)?
   var onWindowSettingsChanged: (() -> Void)?
   private var anchor: UUID?
@@ -50,14 +51,16 @@ final class AppModel: ObservableObject {
     store.sections.flatMap { section in notes(in: section.id) }
   }
   func notes(in section: UUID) -> [Note] {
-    store.notes.filter {
+    let matching = store.notes.filter {
       $0.sectionID == section && (showCompleted || !$0.isDone) &&
       (query.isEmpty || $0.text.localizedCaseInsensitiveContains(query) ||
        (store.sections.first { $0.id == section }?.name.localizedCaseInsensitiveContains(query) ?? false))
     }
+    return matching.filter(\.isPinned) + matching.filter { !$0.isPinned }
   }
   var selectedNotes: [Note] { visibleNotes.filter { selection.contains($0.id) } }
   var visibleSelection: Set<UUID> { Set(selectedNotes.map(\.id)) }
+  var selectionCanModify: Bool { !selectedNotes.isEmpty && selectedNotes.allSatisfy { !$0.isPinned } }
   func reconcileSelection() {
     selection.formIntersection(Set(visibleNotes.map(\.id)))
     if !store.sections.contains(where: { $0.id == activeSectionID }) { activeSectionID = store.sections[0].id }
@@ -111,16 +114,40 @@ final class AppModel: ObservableObject {
     showToast(asList ? LocalizedMessage("Copied as list", "已复制为列表") : LocalizedMessage("Copied", "已复制"))
   }
   func markDone(_ ids: Set<UUID>? = nil) {
-    let targets = ids ?? visibleSelection
+    let requested = ids ?? visibleSelection
+    let targets = Set(store.notes.filter { requested.contains($0.id) && !$0.isPinned }.map(\.id))
+    guard !targets.isEmpty else { return }
     withAnimation(.easeOut(duration: 0.18)) {
       store.toggleDone(ids: targets)
       if !showCompleted { selection.subtract(targets) }
     }
   }
+  func setPinnedSelection(_ isPinned: Bool) {
+    setPinned(ids: visibleSelection, to: isPinned)
+  }
+  func setPinned(ids: Set<UUID>, to isPinned: Bool) {
+    let changed = store.notes.filter { ids.contains($0.id) && $0.isPinned != isPinned }
+    guard !changed.isEmpty else { return }
+    let changedIDs = Set(changed.map(\.id))
+    withAnimation(.easeOut(duration: 0.18)) {
+      store.setPinned(ids: changedIDs, to: isPinned)
+      if isPinned {
+        if let editingID, changedIDs.contains(editingID) { self.editingID = nil }
+        onPinnedNotes?(changedIDs)
+      }
+    }
+    let count = changedIDs.count
+    showToast(isPinned
+      ? LocalizedMessage(count == 1 ? "Pinned · Copy or unpin this note" : "Pinned \(count) notes · Copy or unpin them",
+                         count == 1 ? "已置顶 · 可复制或取消置顶" : "已置顶 \(count) 条笔记 · 可复制或取消置顶")
+      : LocalizedMessage(count == 1 ? "Unpinned" : "Unpinned \(count) notes",
+                         count == 1 ? "已取消置顶" : "已取消置顶 \(count) 条笔记"))
+  }
   func deleteSelection() {
-    guard !visibleSelection.isEmpty else { return }
-    store.remove(ids: visibleSelection)
-    selection = []
+    guard selectionCanModify else { return }
+    let targets = visibleSelection
+    store.remove(ids: targets)
+    selection.subtract(targets)
     showToast(LocalizedMessage("Deleted · ⌘Z to undo", "已删除 · 按 ⌘Z 撤销"))
   }
   var completedCount: Int { store.notes.filter(\.isDone).count }
@@ -146,12 +173,13 @@ final class AppModel: ObservableObject {
       : LocalizedMessage("Cleared \(removed) completed notes · ⌘Z to undo", "已清理 \(removed) 条已完成 · 按 ⌘Z 撤销"))
   }
   func mergeSelection() {
+    guard selectionCanModify else { return }
     guard let id = store.merge(ids: visibleSelection) else { return }
     selection = [id]
     showToast(LocalizedMessage("Notes merged", "笔记已合并"))
   }
   func beginEdit(_ id: UUID) {
-    guard let note = store.notes.first(where: { $0.id == id }) else { return }
+    guard let note = store.notes.first(where: { $0.id == id && !$0.isPinned }) else { return }
     editingText = note.text
     editingID = id
   }
@@ -164,6 +192,7 @@ final class AppModel: ObservableObject {
     onFocusCards?()
   }
   func moveSelection(to section: UUID) {
+    guard selectionCanModify else { return }
     store.move(ids: visibleSelection, to: section)
     activeSectionID = section
   }
