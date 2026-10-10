@@ -27,6 +27,7 @@ final class AppModel: ObservableObject {
   }
   var onHide: (() -> Void)?
   var onShowSettings: (() -> Void)?
+  var onCheckForUpdates: (() -> Void)?
   var onEditInWindow: ((UUID) -> Void)?
   var onPinnedNotes: ((Set<UUID>) -> Void)?
   var onFocusCards: (() -> Void)?

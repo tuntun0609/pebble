@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   let model: AppModel
   private var panel: FloatingPanel!
   private var statusItem: NSStatusItem!
+  private var statusPopover: NSPopover!
   private var settingsWindow: NSWindow?
   private var editorWindows: [UUID: NSWindow] = [:]
   private var keyboardMonitor: Any?
@@ -37,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     NotificationCenter.default.addObserver(self, selector: #selector(refreshLanguage), name: .pebbleLanguageChanged, object: nil)
     model.onHide = { [weak self] in self?.hidePanel() }
     model.onShowSettings = { [weak self] in self?.showSettings() }
+    model.onCheckForUpdates = { [weak self] in self?.checkForUpdates() }
     model.onEditInWindow = { [weak self] id in self?.openEditor(id) }
     model.onPinnedNotes = { [weak self] ids in
       for id in ids { self?.editorWindows[id]?.close() }
@@ -110,6 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     panel?.level = model.alwaysOnTop ? .floating : .normal
     let appearance: NSAppearance? = model.appearance == "system" ? nil : NSAppearance(named: model.appearance == "dark" ? .darkAqua : .aqua)
     panel?.appearance = appearance
+    statusPopover?.appearance = panel?.effectiveAppearance
     settingsWindow?.appearance = appearance
     editorWindows.values.forEach { $0.appearance = appearance }
   }
@@ -137,7 +140,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // always brings Pebble forward instead of hiding a background panel.
     if panel.isVisible && (panel.isKeyWindow || NSApp.isActive) { hidePanel() } else { showPanel(activate: true) }
   }
-  @objc private func captureNow() { capture.captureSelection() }
   @objc private func showSettings() {
     if settingsWindow == nil {
       let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 510, height: 700),
@@ -187,9 +189,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     statusItem.button?.image = image
     statusItem.button?.imageScaling = .scaleProportionallyDown
     statusItem.button?.toolTip = "Pebble"
-    rebuildStatusMenu()
+    statusItem.button?.target = self
+    statusItem.button?.action = #selector(handleStatusItemClick)
+    statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+
+    statusPopover = NSPopover()
+    statusPopover.appearance = panel.effectiveAppearance
+    statusPopover.behavior = .transient
+    statusPopover.animates = true
+    statusPopover.contentSize = NSSize(width: 360, height: 540)
+    statusPopover.contentViewController = NSHostingController(rootView: MenuBarPopoverView(
+      model: model, store: store, capture: capture,
+      onOpenMainPanel: { [weak self] in
+        guard let self else { return }
+        self.statusPopover.performClose(nil)
+        self.showPanel(activate: true)
+      }))
   }
-  private func rebuildStatusMenu() {
+  @objc private func handleStatusItemClick() {
+    guard let button = statusItem.button else { return }
+    let event = NSApp.currentEvent
+    if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+      if statusPopover.isShown { statusPopover.performClose(nil) }
+      guard let event else { return }
+      NSMenu.popUpContextMenu(makeStatusMenu(), with: event, for: button)
+    } else {
+      toggleStatusPopover()
+    }
+  }
+  private func makeStatusMenu() -> NSMenu {
     let menu = NSMenu()
     menu.addItem(item(tr("Show / Hide Pebble", "显示 / 隐藏 Pebble"), action: #selector(togglePanel)))
     menu.addItem(item(tr("Capture Selected Text", "收集选中文字"), action: #selector(captureNow)))
@@ -199,14 +227,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     menu.addItem(item(tr("Check for Updates…", "检查更新…"), action: #selector(checkForUpdates)))
     menu.addItem(.separator())
     menu.addItem(item(tr("Quit Pebble", "退出 Pebble"), action: #selector(quit), key: "q"))
-    statusItem.menu = menu
+    return menu
+  }
+  @objc private func toggleStatusPopover() {
+    guard let button = statusItem.button else { return }
+    if statusPopover.isShown {
+      statusPopover.performClose(nil)
+    } else {
+      statusPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
   }
   @objc private func refreshLanguage() {
     createMainMenu()
-    rebuildStatusMenu()
     settingsWindow?.title = tr("Pebble Settings", "Pebble 设置")
     editorWindows.values.forEach { $0.title = tr("Edit Note — Pebble", "编辑笔记 — Pebble") }
   }
+  @objc private func captureNow() { capture.captureSelection() }
+  @objc private func showLocalFiles() { NSWorkspace.shared.open(store.directory) }
   private func item(_ title: String, action: Selector, key: String = "") -> NSMenuItem {
     let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
     item.target = self
@@ -237,8 +274,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     NSApp.mainMenu = menu
   }
   @objc private func quit() { NSApp.terminate(nil) }
-  @objc private func showLocalFiles() { NSWorkspace.shared.open(store.directory) }
-
   private func startAutomaticUpdates() {
     guard !updates.isDevBuild else { return }
     // Ask once shortly after launch, then a few times a day. The random
