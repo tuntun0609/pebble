@@ -4,14 +4,25 @@ import UniformTypeIdentifiers
 import ServiceManagement
 
 struct VisualEffectBackground: NSViewRepresentable {
+  var cornerRadius: CGFloat = 0
+
   func makeNSView(context: Context) -> NSVisualEffectView {
     let view = NSVisualEffectView()
     view.material = .hudWindow
     view.blendingMode = .behindWindow
     view.state = .active
+    configure(view)
     return view
   }
-  func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+  func updateNSView(_ view: NSVisualEffectView, context: Context) { configure(view) }
+
+  private func configure(_ view: NSVisualEffectView) {
+    guard cornerRadius > 0 else { return }
+    view.wantsLayer = true
+    view.layer?.cornerRadius = cornerRadius
+    view.layer?.cornerCurve = .continuous
+    view.layer?.masksToBounds = true
+  }
 }
 
 private struct WindowDragArea: NSViewRepresentable {

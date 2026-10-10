@@ -70,11 +70,8 @@ struct MenuBarPopoverView: View {
       .scrollIndicators(.hidden)
     }
     .frame(width: 360, height: 540)
-    .background(VisualEffectBackground())
-    .background(colorScheme == .dark ? Color.black.opacity(0.15) : Color.white.opacity(0.15))
-    .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous)
-      .strokeBorder(.white.opacity(colorScheme == .dark ? 0.15 : 0.45), lineWidth: 1))
+    // NSPopover draws the background, corners, border, and arrow as one surface.
+    // A separate rounded background exposes its backing at the mismatched corners.
     .preferredColorScheme(model.colorScheme)
     .onChange(of: store.notes) { _, _ in
       if let copiedID, !store.notes.contains(where: { $0.id == copiedID }) { self.copiedID = nil }
@@ -206,13 +203,13 @@ struct MenuBarPopoverView: View {
         .accessibilityLabel(tr("Unpin note", "取消置顶"))
       }
 
-      if copiedID == note.id {
-        Image(systemName: "checkmark")
-          .font(.system(size: 10, weight: .semibold))
-          .foregroundStyle(Color.accentColor)
-          .padding(.top, 3)
-          .transition(.opacity)
-      }
+      Image(systemName: "checkmark")
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(Color.accentColor)
+        .padding(.top, 3)
+        .frame(width: 18, height: 20, alignment: .topTrailing)
+        .opacity(copiedID == note.id ? 1 : 0)
+        .accessibilityHidden(true)
     }
     .padding(.horizontal, 13)
     .padding(.vertical, 12)
