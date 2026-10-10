@@ -573,7 +573,7 @@ struct PebblePanelView: View {
             + Text("  \(model.activeSection.name)").foregroundColor(.primary).fontWeight(.medium))
             .font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
         }
-        .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize(horizontal: false, vertical: true)
+        .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
         .padding(.horizontal, 10).frame(height: 28)
         .overlay(Capsule().strokeBorder(.primary.opacity(scheme == .dark ? 0.22 : 0.14), lineWidth: 1).allowsHitTesting(false))
         .help(tr("Choose section", "选择分组"))
