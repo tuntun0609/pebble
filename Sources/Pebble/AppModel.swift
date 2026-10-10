@@ -29,7 +29,6 @@ final class AppModel: ObservableObject {
   var onShowSettings: (() -> Void)?
   var onCheckForUpdates: (() -> Void)?
   var onEditInWindow: ((UUID) -> Void)?
-  var onPinnedNotes: ((Set<UUID>) -> Void)?
   var onFocusCards: (() -> Void)?
   var onWindowSettingsChanged: (() -> Void)?
   private var anchor: UUID?
@@ -61,7 +60,7 @@ final class AppModel: ObservableObject {
   }
   var selectedNotes: [Note] { visibleNotes.filter { selection.contains($0.id) } }
   var visibleSelection: Set<UUID> { Set(selectedNotes.map(\.id)) }
-  var selectionCanModify: Bool { !selectedNotes.isEmpty && selectedNotes.allSatisfy { !$0.isPinned } }
+  var selectionCanModify: Bool { !selectedNotes.isEmpty }
   func reconcileSelection() {
     selection.formIntersection(Set(visibleNotes.map(\.id)))
     if !store.sections.contains(where: { $0.id == activeSectionID }) { activeSectionID = store.sections[0].id }
@@ -116,7 +115,7 @@ final class AppModel: ObservableObject {
   }
   func markDone(_ ids: Set<UUID>? = nil) {
     let requested = ids ?? visibleSelection
-    let targets = Set(store.notes.filter { requested.contains($0.id) && !$0.isPinned }.map(\.id))
+    let targets = Set(store.notes.filter { requested.contains($0.id) }.map(\.id))
     guard !targets.isEmpty else { return }
     withAnimation(.easeOut(duration: 0.18)) {
       store.toggleDone(ids: targets)
@@ -132,15 +131,11 @@ final class AppModel: ObservableObject {
     let changedIDs = Set(changed.map(\.id))
     withAnimation(.easeOut(duration: 0.18)) {
       store.setPinned(ids: changedIDs, to: isPinned)
-      if isPinned {
-        if let editingID, changedIDs.contains(editingID) { self.editingID = nil }
-        onPinnedNotes?(changedIDs)
-      }
     }
     let count = changedIDs.count
     showToast(isPinned
-      ? LocalizedMessage(count == 1 ? "Pinned · Copy or unpin this note" : "Pinned \(count) notes · Copy or unpin them",
-                         count == 1 ? "已置顶 · 可复制或取消置顶" : "已置顶 \(count) 条笔记 · 可复制或取消置顶")
+      ? LocalizedMessage(count == 1 ? "Pinned" : "Pinned \(count) notes",
+                         count == 1 ? "已置顶" : "已置顶 \(count) 条笔记")
       : LocalizedMessage(count == 1 ? "Unpinned" : "Unpinned \(count) notes",
                          count == 1 ? "已取消置顶" : "已取消置顶 \(count) 条笔记"))
   }
@@ -180,7 +175,7 @@ final class AppModel: ObservableObject {
     showToast(LocalizedMessage("Notes merged", "笔记已合并"))
   }
   func beginEdit(_ id: UUID) {
-    guard let note = store.notes.first(where: { $0.id == id && !$0.isPinned }) else { return }
+    guard let note = store.notes.first(where: { $0.id == id }) else { return }
     editingText = note.text
     editingID = id
   }

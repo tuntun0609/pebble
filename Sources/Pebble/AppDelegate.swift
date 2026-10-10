@@ -40,9 +40,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     model.onShowSettings = { [weak self] in self?.showSettings() }
     model.onCheckForUpdates = { [weak self] in self?.checkForUpdates() }
     model.onEditInWindow = { [weak self] id in self?.openEditor(id) }
-    model.onPinnedNotes = { [weak self] ids in
-      for id in ids { self?.editorWindows[id]?.close() }
-    }
     model.onFocusCards = { [weak self] in self?.panel.makeFirstResponder(nil) }
     model.onWindowSettingsChanged = { [weak self] in self?.applyWindowSettings() }
     updates.onInstalled = { [weak self] version in self?.promptToRestart(version: version) }
@@ -156,7 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     settingsWindow?.makeKeyAndOrderFront(nil)
   }
   private func openEditor(_ id: UUID) {
-    guard let note = store.notes.first(where: { $0.id == id && !$0.isPinned }) else { return }
+    guard let note = store.notes.first(where: { $0.id == id }) else { return }
     if let window = editorWindows[id] { window.makeKeyAndOrderFront(nil); return }
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 540),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)

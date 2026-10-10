@@ -309,7 +309,6 @@ struct PebblePanelView: View {
 
   private func sectionView(_ section: NoteSection) -> some View {
     let notes = model.notes(in: section.id)
-    let sectionHasPinnedNotes = store.notes.contains { $0.sectionID == section.id && $0.isPinned }
     let sectionHeight = sectionHeights[section.id] ?? 1
     let reorderSection: (UUID, Bool) -> Void = { id, after in
       moveSection(id, relativeTo: section.id, after: after)
@@ -366,19 +365,11 @@ struct PebblePanelView: View {
               store.deleteSection(id: section.id)
               model.activeSectionID = store.sections[0].id
             }
-            .disabled(sectionHasPinnedNotes)
-            .help(sectionHasPinnedNotes
-              ? tr("Unpin this section’s notes before deleting the section.", "请先取消本组便签的置顶，再删除分组。")
-              : "")
             Button(tr("Delete Section and All Notes", "删除分组及所有笔记"), role: .destructive) {
               store.deleteSection(id: section.id, deleteNotes: true)
               model.activeSectionID = store.sections[0].id
               model.showToast(LocalizedMessage("Section and notes deleted · ⌘Z to undo", "已删除分组及所有笔记 · 按 ⌘Z 撤销"))
             }
-            .disabled(sectionHasPinnedNotes)
-            .help(sectionHasPinnedNotes
-              ? tr("Unpin this section’s notes before deleting the section.", "请先取消本组便签的置顶，再删除分组。")
-              : "")
           }
         }
         .background(isTargeted ? Color.accentColor.opacity(0.12) : .clear,
@@ -453,27 +444,15 @@ struct PebblePanelView: View {
 
   private func noteCard(_ note: Note) -> some View {
     HStack(alignment: model.editingID == note.id ? .top : .firstTextBaseline, spacing: 10) {
-      if note.isPinned {
-        Button { model.setPinned(ids: [note.id], to: false) } label: {
-          Image(systemName: "pin.fill")
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(Color.accentColor)
-            .frame(width: 19)
-        }
-        .buttonStyle(.plain)
-        .help(tr("Unpin note", "取消置顶"))
-        .accessibilityLabel(tr("Unpin note", "取消置顶"))
-      } else {
-        Button { model.markDone([note.id]) } label: {
-          Text(Image(systemName: note.isDone ? "checkmark.circle.fill" : "circle"))
-            .font(.system(size: 14, weight: .light))
-            .imageScale(.large)
-            .foregroundStyle(note.isDone ? Color.accentColor : Color.secondary)
-            .frame(width: 19)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成"))
+      Button { model.markDone([note.id]) } label: {
+        Text(Image(systemName: note.isDone ? "checkmark.circle.fill" : "circle"))
+          .font(.system(size: 14, weight: .light))
+          .imageScale(.large)
+          .foregroundStyle(note.isDone ? Color.accentColor : Color.secondary)
+          .frame(width: 19)
       }
+      .buttonStyle(.plain)
+      .accessibilityLabel(note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成"))
       if model.editingID == note.id {
         VStack(alignment: .trailing, spacing: 7) {
           PlainTextEditor(text: $model.editingText, placeholder: tr("Note", "笔记"), onSubmit: { model.commitEdit() }, onCancel: { model.editingID = nil }, focusToken: 1)
@@ -491,6 +470,17 @@ struct PebblePanelView: View {
           .opacity(note.isDone ? 0.5 : 1)
           .frame(maxWidth: .infinity, alignment: .leading)
           .allowsHitTesting(false)
+      }
+      if note.isPinned {
+        Button { model.setPinned(ids: [note.id], to: false) } label: {
+          Image(systemName: "pin.fill")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color.accentColor)
+            .frame(width: 18)
+        }
+        .buttonStyle(.plain)
+        .help(tr("Unpin note", "取消置顶"))
+        .accessibilityLabel(tr("Unpin note", "取消置顶"))
       }
     }
     .padding(.horizontal, 13).padding(.vertical, 12)
@@ -514,26 +504,24 @@ struct PebblePanelView: View {
         Button(tr("Unpin", "取消置顶")) { context(note.id) { model.setPinnedSelection(false) } }
       } else {
         Button(tr("Pin", "置顶"), systemImage: "pin") { context(note.id) { model.setPinnedSelection(true) } }
-        Divider()
-        Button(note.isDone ? tr("Mark as Not Done", "标记为未完成") : tr("Mark as Done", "标记为已完成")) { context(note.id) { model.markDone() } }
-        Button(model.expanded.contains(note.id) ? tr("Collapse", "收起") : tr("Expand", "展开")) {
-          if model.expanded.contains(note.id) { model.expanded.remove(note.id) } else { model.expanded.insert(note.id) }
-        }.disabled(model.selection.contains(note.id) && model.selection.count > 1)
-        Divider()
-        Button(tr("Edit", "编辑")) { model.select(note.id, modifiers: []); model.beginEdit(note.id) }
-        Button(tr("Edit in New Window", "在新窗口中编辑")) { model.onEditInWindow?(note.id) }
-        Button(tr("Merge Notes", "合并笔记")) { context(note.id) { model.mergeSelection() } }
-          .disabled(!model.selection.contains(note.id) || model.selection.count < 2 || !model.selectionCanModify)
-        Menu(tr("Move to", "移动到")) {
-          ForEach(store.sections) { section in
-            Button(section.name) { context(note.id) { model.moveSelection(to: section.id) } }
-          }
-        }
-        .disabled(!model.selectionCanModify)
-        Divider()
-        Button(tr("Delete", "删除"), role: .destructive) { context(note.id) { model.deleteSelection() } }
-          .disabled(!model.selectionCanModify)
       }
+      Divider()
+      Button(note.isDone ? tr("Mark as Not Done", "标记为未完成") : tr("Mark as Done", "标记为已完成")) { context(note.id) { model.markDone() } }
+      Button(model.expanded.contains(note.id) ? tr("Collapse Note", "收起内容") : tr("Show Full Note", "显示完整内容")) {
+        if model.expanded.contains(note.id) { model.expanded.remove(note.id) } else { model.expanded.insert(note.id) }
+      }.disabled(model.selection.contains(note.id) && model.selection.count > 1)
+      Divider()
+      Button(tr("Edit", "编辑")) { model.select(note.id, modifiers: []); model.beginEdit(note.id) }
+      Button(tr("Edit in New Window", "在新窗口中编辑")) { model.onEditInWindow?(note.id) }
+      Button(tr("Merge Notes", "合并笔记")) { context(note.id) { model.mergeSelection() } }
+        .disabled(!model.selection.contains(note.id) || model.selection.count < 2 || !model.selectionCanModify)
+      Menu(tr("Move to", "移动到")) {
+        ForEach(store.sections) { section in
+          Button(section.name) { context(note.id) { model.moveSelection(to: section.id) } }
+        }
+      }
+      Divider()
+      Button(tr("Delete", "删除"), role: .destructive) { context(note.id) { model.deleteSelection() } }
     }
     .onDrag {
       startDragScrolling()

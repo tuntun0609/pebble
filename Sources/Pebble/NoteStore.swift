@@ -19,7 +19,7 @@ struct Note: Identifiable, Codable, Equatable {
     self.id = id
     self.text = text
     self.sectionID = sectionID
-    self.isDone = isPinned ? false : isDone
+    self.isDone = isDone
     self.isPinned = isPinned
     self.createdAt = createdAt
     self.updatedAt = updatedAt
@@ -106,7 +106,7 @@ final class NoteStore: ObservableObject {
 
   func update(id: UUID, text: String) {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, let index = notes.firstIndex(where: { $0.id == id && !$0.isPinned }),
+    guard !text.isEmpty, let index = notes.firstIndex(where: { $0.id == id }),
           notes[index].text != text else { return }
     var next = snapshot
     next.notes[index].text = text
@@ -115,12 +115,12 @@ final class NoteStore: ObservableObject {
   }
 
   func toggleDone(ids: Set<UUID>) {
-    let selected = notes.filter { ids.contains($0.id) && !$0.isPinned }
+    let selected = notes.filter { ids.contains($0.id) }
     guard !selected.isEmpty else { return }
     let isDone = !selected.allSatisfy(\.isDone)
     let now = Date()
     var next = snapshot
-    for index in next.notes.indices where ids.contains(next.notes[index].id) && !next.notes[index].isPinned {
+    for index in next.notes.indices where ids.contains(next.notes[index].id) {
       if next.notes[index].isDone != isDone {
         next.notes[index].isDone = isDone
         next.notes[index].updatedAt = now
@@ -131,7 +131,7 @@ final class NoteStore: ObservableObject {
 
   func remove(ids: Set<UUID>) {
     var next = snapshot
-    next.notes.removeAll { ids.contains($0.id) && !$0.isPinned }
+    next.notes.removeAll { ids.contains($0.id) }
     commit(next)
   }
 
@@ -143,7 +143,6 @@ final class NoteStore: ObservableObject {
     var next = snapshot
     for index in next.notes.indices where changingIDs.contains(next.notes[index].id) {
       next.notes[index].isPinned = isPinned
-      if isPinned { next.notes[index].isDone = false }
       next.notes[index].updatedAt = now
     }
 
@@ -170,7 +169,6 @@ final class NoteStore: ObservableObject {
   func merge(ids: Set<UUID>) -> UUID? {
     let selected = sections.flatMap { section in notes.filter { $0.sectionID == section.id && ids.contains($0.id) } }
     guard selected.count > 1, let first = selected.first,
-          selected.allSatisfy({ !$0.isPinned }),
           let index = notes.firstIndex(where: { $0.id == first.id }) else { return nil }
     var next = snapshot
     next.notes[index].text = selected.map(\.text).joined(separator: "\n\n")
@@ -193,7 +191,7 @@ final class NoteStore: ObservableObject {
     guard sections.contains(where: { $0.id == sectionID }) else { return }
     let now = Date()
     var next = snapshot
-    for index in next.notes.indices where ids.contains(next.notes[index].id) && !next.notes[index].isPinned {
+    for index in next.notes.indices where ids.contains(next.notes[index].id) {
       if next.notes[index].sectionID != sectionID {
         next.notes[index].sectionID = sectionID
         next.notes[index].updatedAt = now
@@ -223,8 +221,7 @@ final class NoteStore: ObservableObject {
 
   func deleteSection(id: UUID, deleteNotes: Bool = false) {
     guard sections.count > 1, sections.contains(where: { $0.id == id }),
-          let destination = sections.first(where: { $0.id != id }),
-          !notes.contains(where: { $0.sectionID == id && $0.isPinned }) else { return }
+          let destination = sections.first(where: { $0.id != id }) else { return }
     var next = snapshot
     next.sections.removeAll { $0.id == id }
     if deleteNotes {
@@ -256,8 +253,6 @@ final class NoteStore: ObservableObject {
   func reorder(noteID: UUID, to sectionID: UUID, before destinationID: UUID? = nil) -> Bool {
     guard sections.contains(where: { $0.id == sectionID }),
           let index = notes.firstIndex(where: { $0.id == noteID }) else { return false }
-    let source = notes[index]
-    guard !source.isPinned || source.sectionID == sectionID else { return false }
     if let destinationID {
       guard noteID != destinationID,
             notes.contains(where: { $0.id == destinationID && $0.sectionID == sectionID }) else { return false }

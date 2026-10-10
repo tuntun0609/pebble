@@ -174,19 +174,14 @@ struct MenuBarPopoverView: View {
 
   private func noteCard(_ note: Note) -> some View {
     HStack(alignment: .top, spacing: 10) {
-      Button {
-        if note.isPinned { store.setPinned(ids: [note.id], to: false) }
-        else { store.toggleDone(ids: [note.id]) }
-      } label: {
-        Image(systemName: note.isPinned ? "pin.fill" : (note.isDone ? "checkmark.circle.fill" : "circle"))
+      Button { store.toggleDone(ids: [note.id]) } label: {
+        Image(systemName: note.isDone ? "checkmark.circle.fill" : "circle")
           .font(.system(size: 14, weight: .medium))
-          .foregroundStyle(note.isPinned || note.isDone ? Color.accentColor : Color.secondary.opacity(0.75))
+          .foregroundStyle(note.isDone ? Color.accentColor : Color.secondary.opacity(0.75))
           .frame(width: 18, height: 20)
       }
       .buttonStyle(.plain)
-      .help(note.isPinned
-            ? tr("Unpin note", "取消置顶")
-            : (note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成")))
+      .help(note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成"))
 
       MarkdownNoteText(text: note.text)
         .font(.system(size: 14))
@@ -198,6 +193,18 @@ struct MenuBarPopoverView: View {
         .contentShape(Rectangle())
         .onTapGesture { copy(note) }
         .help(tr("Click to copy", "点击复制"))
+
+      if note.isPinned {
+        Button { store.setPinned(ids: [note.id], to: false) } label: {
+          Image(systemName: "pin.fill")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(Color.accentColor)
+            .frame(width: 18, height: 20)
+        }
+        .buttonStyle(.plain)
+        .help(tr("Unpin note", "取消置顶"))
+        .accessibilityLabel(tr("Unpin note", "取消置顶"))
+      }
 
       if copiedID == note.id {
         Image(systemName: "checkmark")
@@ -216,12 +223,13 @@ struct MenuBarPopoverView: View {
       .strokeBorder(Color.primary.opacity(0.045), lineWidth: 1))
     .contextMenu {
       Button(tr("Copy", "复制"), systemImage: "doc.on.doc") { copy(note) }
-      if !note.isPinned {
-        Button(note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成")) {
-          store.toggleDone(ids: [note.id])
-        }
-      } else {
+      Button(note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成")) {
+        store.toggleDone(ids: [note.id])
+      }
+      if note.isPinned {
         Button(tr("Unpin", "取消置顶")) { store.setPinned(ids: [note.id], to: false) }
+      } else {
+        Button(tr("Pin", "置顶"), systemImage: "pin") { store.setPinned(ids: [note.id], to: true) }
       }
     }
   }
