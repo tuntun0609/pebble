@@ -120,39 +120,32 @@ struct MenuBarPopoverView: View {
       .disabled(!store.canUndo)
       .help(tr("Undo", "撤销"))
 
-      Menu {
-        Button(tr("Open Pebble", "打开 Pebble"), systemImage: "macwindow") { onOpenMainPanel() }
-        Button(tr("New Note…", "新建笔记…"), systemImage: "square.and.pencil") {
-          model.composerFocus += 1
-          onOpenMainPanel()
-        }
-        Button(tr("Capture Selected Text", "收集选中文字"), systemImage: "text.viewfinder") {
-          capture.captureSelection()
-        }
-        Divider()
-        Button(tr("Redo", "重做"), systemImage: "arrow.uturn.forward") { store.redo() }
-          .disabled(!store.canRedo)
-        Button(tr("Settings…", "设置…"), systemImage: "gearshape") { model.onShowSettings?() }
-        Button(tr("Show Local Files", "显示本地文件"), systemImage: "folder") {
-          NSWorkspace.shared.open(store.directory)
-        }
-        Button(tr("Check for Updates…", "检查更新…"), systemImage: "arrow.down.circle") {
-          model.onCheckForUpdates?()
-        }
-        Divider()
-        Button(tr("Quit Pebble", "退出 Pebble"), systemImage: "xmark.circle") { NSApp.terminate(nil) }
-      } label: {
+      ZStack {
+        Circle().fill(.background.opacity(0.66))
         Image(systemName: "ellipsis")
           .font(.system(size: 16, weight: .medium))
           .foregroundStyle(.secondary)
           .frame(width: 31, height: 31)
       }
-      .menuStyle(.borderlessButton)
-      .menuIndicator(.hidden)
-      .fixedSize()
       .frame(width: 31, height: 31)
-      .background(.background.opacity(0.66), in: Circle())
-      .accessibilityLabel(tr("More options", "更多选项"))
+      .overlay {
+        NativeMenuHitTarget(label: tr("More options", "更多选项"), entries: [
+          .item(title: tr("Open Pebble", "打开 Pebble"), systemImage: "macwindow", action: { onOpenMainPanel() }),
+          .item(title: tr("New Note…", "新建笔记…"), systemImage: "square.and.pencil", action: {
+            model.composerFocus += 1
+            onOpenMainPanel()
+          }),
+          .item(title: tr("Capture Selected Text", "收集选中文字"), systemImage: "text.viewfinder", action: { capture.captureSelection() }),
+          .separator,
+          .item(title: tr("Redo", "重做"), systemImage: "arrow.uturn.forward", isEnabled: store.canRedo, action: { store.redo() }),
+          .item(title: tr("Settings…", "设置…"), systemImage: "gearshape", action: { model.onShowSettings?() }),
+          .item(title: tr("Show Local Files", "显示本地文件"), systemImage: "folder", action: { NSWorkspace.shared.open(store.directory) }),
+          .item(title: tr("Check for Updates…", "检查更新…"), systemImage: "arrow.down.circle", action: { model.onCheckForUpdates?() }),
+          .separator,
+          .item(title: tr("Quit Pebble", "退出 Pebble"), systemImage: "xmark.circle", action: { NSApp.terminate(nil) })
+        ])
+        .frame(width: 56, height: 48)
+      }
     }
   }
 

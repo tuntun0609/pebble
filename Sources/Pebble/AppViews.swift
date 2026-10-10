@@ -255,31 +255,34 @@ struct PebblePanelView: View {
         }
       }.padding(.horizontal, 12).frame(height: 31)
         .background(.background.opacity(0.66), in: Capsule())
-      Menu {
-        Button(tr("New Note", "新建笔记"), systemImage: "square.and.pencil") { model.composerFocus += 1 }
-        Button(tr("New Section…", "新建分组…"), systemImage: "folder.badge.plus") { model.askSectionName() }
-        Divider()
-        Toggle(tr("Show Completed", "显示已完成"), isOn: $model.showCompleted)
-        Button(tr("Clear Completed", "清理已完成"), systemImage: "checkmark.circle.badge.xmark") { model.clearCompleted() }
-          .disabled(model.completedCount == 0)
-        Toggle(tr("Always on Top", "始终置顶"), isOn: $model.alwaysOnTop)
-        Divider()
-        Button(tr("Undo", "撤销"), systemImage: "arrow.uturn.backward") { store.undo() }.disabled(!store.canUndo)
-        Button(tr("Redo", "重做"), systemImage: "arrow.uturn.forward") { store.redo() }.disabled(!store.canRedo)
-        Divider()
-        Button(tr("Settings…", "设置…"), systemImage: "gearshape") { model.onShowSettings?() }
-        Button(tr("Show Local Files", "显示本地文件"), systemImage: "folder") { NSWorkspace.shared.open(store.directory) }
-        Button(tr("Hide Pebble", "隐藏 Pebble")) { model.onHide?() }
-        Button(tr("Quit Pebble", "退出 Pebble")) { NSApp.terminate(nil) }
-      } label: {
-        Image(systemName: "ellipsis").font(.system(size: 16, weight: .medium))
-          .foregroundStyle(.secondary).frame(width: 31, height: 31)
+      ZStack {
+        Circle().fill(.background.opacity(0.66))
+        Image(systemName: "ellipsis")
+          .font(.system(size: 16, weight: .medium))
+          .foregroundStyle(.secondary)
+          .frame(width: 31, height: 31)
           .background(.background.opacity(0.66), in: Circle())
       }
-      .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
       .frame(width: 31, height: 31)
-      .background(.background.opacity(0.66), in: Circle())
-      .accessibilityLabel(tr("More options", "更多选项"))
+      .overlay {
+        NativeMenuHitTarget(label: tr("More options", "更多选项"), entries: [
+          .item(title: tr("New Note", "新建笔记"), systemImage: "square.and.pencil", action: { model.composerFocus += 1 }),
+          .item(title: tr("New Section…", "新建分组…"), systemImage: "folder.badge.plus", action: { model.askSectionName() }),
+          .separator,
+          .item(title: tr("Show Completed", "显示已完成"), isOn: model.showCompleted, action: { model.showCompleted.toggle() }),
+          .item(title: tr("Clear Completed", "清理已完成"), systemImage: "checkmark.circle.badge.xmark", isEnabled: model.completedCount > 0, action: { model.clearCompleted() }),
+          .item(title: tr("Always on Top", "始终置顶"), isOn: model.alwaysOnTop, action: { model.alwaysOnTop.toggle() }),
+          .separator,
+          .item(title: tr("Undo", "撤销"), systemImage: "arrow.uturn.backward", isEnabled: store.canUndo, action: { store.undo() }),
+          .item(title: tr("Redo", "重做"), systemImage: "arrow.uturn.forward", isEnabled: store.canRedo, action: { store.redo() }),
+          .separator,
+          .item(title: tr("Settings…", "设置…"), systemImage: "gearshape", action: { model.onShowSettings?() }),
+          .item(title: tr("Show Local Files", "显示本地文件"), systemImage: "folder", action: { NSWorkspace.shared.open(store.directory) }),
+          .item(title: tr("Hide Pebble", "隐藏 Pebble"), action: { model.onHide?() }),
+          .item(title: tr("Quit Pebble", "退出 Pebble"), action: { NSApp.terminate(nil) })
+        ])
+        .frame(width: 56, height: 48)
+      }
     }
   }
 
