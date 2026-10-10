@@ -457,44 +457,48 @@ struct PebblePanelView: View {
   }
 
   private func noteCard(_ note: Note) -> some View {
-    HStack(alignment: model.editingID == note.id ? .top : .firstTextBaseline, spacing: 10) {
-      Button { model.markDone([note.id]) } label: {
-        Text(Image(systemName: note.isDone ? "checkmark.circle.fill" : "circle"))
-          .font(.system(size: 14, weight: .light))
-          .imageScale(.large)
-          .foregroundStyle(note.isDone ? Color.accentColor : Color.secondary)
-          .frame(width: 19)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成"))
-      if model.editingID == note.id {
-        VStack(alignment: .trailing, spacing: 7) {
-          PlainTextEditor(text: $model.editingText, placeholder: tr("Note", "笔记"), onSubmit: { model.commitEdit() }, onCancel: { model.editingID = nil }, focusToken: 1)
-            .frame(minHeight: 76, maxHeight: 160)
-          HStack(spacing: 10) {
-            Button(tr("Cancel", "取消")) { model.editingID = nil }.buttonStyle(.plain).foregroundStyle(.secondary)
-            Button(tr("Save", "保存")) { model.commitEdit() }.buttonStyle(.plain).foregroundStyle(Color.accentColor)
-          }.font(.system(size: 11))
-        }
-      } else {
-        MarkdownNoteText(text: note.text)
-          .font(.system(size: 14)).lineSpacing(2)
-          .lineLimit(model.expanded.contains(note.id) ? nil : 3)
-          .strikethrough(note.isDone, color: .secondary.opacity(0.6))
-          .opacity(note.isDone ? 0.5 : 1)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .allowsHitTesting(false)
-      }
-      if note.isPinned {
-        Button { model.setPinned(ids: [note.id], to: false) } label: {
-          Image(systemName: "pin.fill")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(Color.accentColor)
-            .frame(width: 18)
+    VStack(alignment: .trailing, spacing: 7) {
+      HStack(alignment: .top, spacing: 10) {
+        Button { model.markDone([note.id]) } label: {
+          Text(Image(systemName: note.isDone ? "checkmark.circle.fill" : "circle"))
+            .font(.system(size: 14, weight: .light))
+            .imageScale(.large)
+            .foregroundStyle(note.isDone ? Color.accentColor : Color.secondary)
+            .frame(width: 19)
         }
         .buttonStyle(.plain)
-        .help(tr("Unpin note", "取消置顶"))
-        .accessibilityLabel(tr("Unpin note", "取消置顶"))
+        .accessibilityLabel(note.isDone ? tr("Mark incomplete", "标记为未完成") : tr("Mark as done", "标记为已完成"))
+        if model.editingID == note.id {
+          PlainTextEditor(text: $model.editingText, placeholder: tr("Note", "笔记"), onSubmit: { model.commitEdit() }, onCancel: { model.editingID = nil }, focusToken: 1)
+            .frame(minHeight: 76, maxHeight: 160)
+        } else {
+          MarkdownNoteText(text: note.text)
+            .font(.system(size: 14)).lineSpacing(2)
+            .lineLimit(model.expanded.contains(note.id) ? nil : 3)
+            .strikethrough(note.isDone, color: .secondary.opacity(0.6))
+            .opacity(note.isDone ? 0.5 : 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .allowsHitTesting(false)
+        }
+        if note.isPinned {
+          Button { model.setPinned(ids: [note.id], to: false) } label: {
+            Image(systemName: "pin.fill")
+              .font(.system(size: 12, weight: .medium))
+              .foregroundStyle(Color.accentColor)
+              .frame(width: 18, height: 19)
+          }
+          .buttonStyle(.plain)
+          .help(tr("Unpin note", "取消置顶"))
+          .accessibilityLabel(tr("Unpin note", "取消置顶"))
+        }
+      }
+      if model.editingID == note.id {
+        HStack(spacing: 10) {
+          Button(tr("Cancel", "取消")) { model.editingID = nil }.buttonStyle(.plain).foregroundStyle(.secondary)
+          Button(tr("Save", "保存")) { model.commitEdit() }.buttonStyle(.plain).foregroundStyle(Color.accentColor)
+        }
+        .font(.system(size: 11))
+        .frame(maxWidth: .infinity, alignment: .trailing)
       }
     }
     .padding(.horizontal, 13).padding(.vertical, 12)
