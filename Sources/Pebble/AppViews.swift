@@ -796,6 +796,12 @@ struct SettingsView: View {
           }
           .buttonStyle(.borderedProminent)
         }
+        if case .ready = updates.state {
+          Button(tr("Restart Now", "立即重启")) {
+            updates.restartNow()
+          }
+          .buttonStyle(.borderedProminent)
+        }
         Button(tr("Check for Updates", "检查更新")) {
           Task { await updates.check(userInitiated: true) }
         }
