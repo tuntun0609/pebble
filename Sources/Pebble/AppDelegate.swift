@@ -132,10 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
   }
   @objc private func togglePanel() {
-    // When triggered by the global shortcut, the panel may be visible but not
-    // key (another app is focused); treat that as "show" so the shortcut
-    // always brings Pebble forward instead of hiding a background panel.
-    if panel.isVisible && (panel.isKeyWindow || NSApp.isActive) { hidePanel() } else { showPanel(activate: true) }
+    // Only hide when the panel itself is the active window. Settings or an
+    // editor can keep the app active while the panel sits behind them.
+    if panel.isVisible && panel.isKeyWindow { hidePanel() } else { showPanel(activate: true) }
   }
   @objc private func showSettings() {
     if settingsWindow == nil {
