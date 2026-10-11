@@ -53,9 +53,36 @@ final class NoteStore: ObservableObject {
   var canUndo: Bool { !undoHistory.isEmpty }
   var canRedo: Bool { !redoHistory.isEmpty }
 
-  private struct Snapshot: Codable, Equatable {
+  fileprivate struct Snapshot: Codable, Equatable {
     var notes: [Note]
     var sections: [NoteSection]
+  }
+
+  struct ImportPreview {
+    let addedNotes: Int
+    let addedSections: Int
+    let skippedNotes: Int
+    var hasChanges: Bool { addedNotes > 0 || addedSections > 0 }
+    fileprivate let original: Snapshot
+    fileprivate let merged: Snapshot
+  }
+
+  private struct ExportDocument: Encodable {
+    let formatVersion = 1
+    let notes: [Note]
+    let sections: [NoteSection]
+  }
+
+  private struct ImportVersion: Decodable {
+    let formatVersion: Int?
+
+    private enum CodingKeys: String, CodingKey { case formatVersion }
+
+    init(from decoder: Decoder) throws {
+      let values = try decoder.container(keyedBy: CodingKeys.self)
+      formatVersion = values.contains(.formatVersion)
+        ? try values.decode(Int.self, forKey: .formatVersion) : nil
+    }
   }
 
   private var undoHistory: [Snapshot] = []
@@ -303,32 +330,139 @@ final class NoteStore: ObservableObject {
     save()
   }
 
+  func exportNotes(to url: URL) throws {
+    let destination = url.standardizedFileURL.resolvingSymlinksInPath()
+    let managedFiles = [fileURL, backupURL].map { $0.standardizedFileURL.resolvingSymlinksInPath() }
+    guard !managedFiles.contains(destination) else {
+      throw fileError(tr("Choose a different location so the export does not overwrite Pebble's local files.",
+                         "请选择其他位置，避免导出文件覆盖 Pebble 的本地数据文件。"))
+    }
+    try validate(snapshot)
+    let document = ExportDocument(notes: notes, sections: sections)
+    try encode(document).write(to: url, options: .atomic)
+  }
+
+  func prepareImport(from url: URL) throws -> ImportPreview {
+    let data = try Data(contentsOf: url)
+    let imported: Snapshot
+    do {
+      let version = try JSONDecoder().decode(ImportVersion.self, from: data).formatVersion
+      if let version, version != 1 {
+        throw fileError(tr("This file uses an unsupported format version (\(version)). Update Pebble before importing it.",
+                           "文件使用了不支持的格式版本（\(version)），请更新 Pebble 后再导入。"))
+      }
+      imported = try decode(data)
+    } catch is DecodingError {
+      throw fileError(tr("This is not a valid Pebble notes file. It may be damaged or incomplete.",
+                         "这不是有效的 Pebble 笔记文件，文件可能已损坏或内容不完整。"))
+    }
+
+    let original = snapshot
+    var merged = original
+    // Preserve ID matches even when the imported group has been renamed.
+    let localSectionsByID = Dictionary(uniqueKeysWithValues: sections.map { ($0.id, $0) })
+    var sectionsByName: [String: NoteSection] = [:]
+    for section in sections where sectionsByName[section.name] == nil {
+      sectionsByName[section.name] = section
+    }
+    var sectionMapping: [UUID: UUID] = [:]
+    for section in imported.sections {
+      if let existing = localSectionsByID[section.id] ?? sectionsByName[section.name] {
+        sectionMapping[section.id] = existing.id
+      } else {
+        merged.sections.append(section)
+        sectionsByName[section.name] = section
+        sectionMapping[section.id] = section.id
+      }
+    }
+    let localNoteIDs = Set(notes.map(\.id))
+    var skippedNotes = 0
+    for var note in imported.notes {
+      if localNoteIDs.contains(note.id) {
+        skippedNotes += 1
+      } else {
+        // Validation guarantees every note references a mapped section.
+        guard let sectionID = sectionMapping[note.sectionID] else {
+          throw fileError(tr("The notes file contains an invalid section reference.", "笔记文件包含无效的分组引用。"))
+        }
+        note.sectionID = sectionID
+        merged.notes.append(note)
+      }
+    }
+    try validate(merged)
+    return ImportPreview(addedNotes: merged.notes.count - notes.count,
+                         addedSections: merged.sections.count - sections.count,
+                         skippedNotes: skippedNotes, original: original, merged: merged)
+  }
+
+  @discardableResult
+  func importNotes(_ preview: ImportPreview) throws -> URL? {
+    guard snapshot == preview.original else {
+      throw fileError(tr("Your notes changed after the preview. Select the file again to review an updated preview.",
+                         "预览后笔记已发生变化，请重新选择文件并确认最新的导入预览。"))
+    }
+    guard preview.hasChanges else { return nil }
+    try requireSavingEnabled()
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+    let preservedURL = directory.appendingPathComponent("notes.before-import-\(timestamp)-\(UUID().uuidString).json")
+    try encode(snapshot).write(to: preservedURL, options: .atomic)
+    // Do not publish the merge or alter undo history until the atomic save succeeds.
+    try persist(preview.merged)
+    undoHistory.append(preview.original)
+    if undoHistory.count > 100 { undoHistory.removeFirst() }
+    redoHistory.removeAll()
+    lastEditID = nil
+    lastEditAt = .distantPast
+    apply(preview.merged)
+    errorMessage = nil
+    return preservedURL
+  }
+
   func save() {
     if let reason = blockedSaveReason {
       errorMessage = reason
       return
     }
     do {
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      encoder.dateEncodingStrategy = .iso8601
-      let data = try encoder.encode(snapshot)
-      var previousData = lastSavedData
-      if FileManager.default.fileExists(atPath: fileURL.path) {
-        let existing = try Data(contentsOf: fileURL)
-        _ = try decode(existing)
-        previousData = existing
-      }
-      // Keep the previous valid document before atomically replacing the current one.
-      try (previousData ?? data).write(to: backupURL, options: .atomic)
-      try data.write(to: fileURL, options: .atomic)
-      lastSavedData = data
+      try persist(snapshot)
       errorMessage = nil
     } catch {
       errorMessage = LocalizedMessage("Could not save notes. Your changes remain in memory. \(error.localizedDescription)",
                                       "无法保存笔记，改动暂时保留在内存中。\(error.localizedDescription)")
     }
+  }
+
+  private func requireSavingEnabled() throws {
+    if let reason = blockedSaveReason { throw fileError(reason.text) }
+  }
+
+  private func encode<Value: Encodable>(_ value: Value) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.dateEncodingStrategy = .iso8601
+    return try encoder.encode(value)
+  }
+
+  private func persist(_ value: Snapshot) throws {
+    try requireSavingEnabled()
+    try validate(value)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let data = try encode(value)
+    var previousData = lastSavedData
+    if FileManager.default.fileExists(atPath: fileURL.path) {
+      let existing = try Data(contentsOf: fileURL)
+      _ = try decode(existing)
+      previousData = existing
+    }
+    // Keep the previous valid document before atomically replacing the current one.
+    try (previousData ?? data).write(to: backupURL, options: .atomic)
+    try data.write(to: fileURL, options: .atomic)
+    lastSavedData = data
+  }
+
+  private func fileError(_ description: String) -> NSError {
+    NSError(domain: "Pebble.Notes", code: 1, userInfo: [NSLocalizedDescriptionKey: description])
   }
 
   private func commit(_ next: Snapshot, editID: UUID? = nil) {
@@ -356,6 +490,11 @@ final class NoteStore: ObservableObject {
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     let value = try decoder.decode(Snapshot.self, from: data)
+    try validate(value)
+    return value
+  }
+
+  private func validate(_ value: Snapshot) throws {
     let sectionIDs = Set(value.sections.map(\.id))
     guard !value.sections.isEmpty,
           sectionIDs.count == value.sections.count,
@@ -363,10 +502,8 @@ final class NoteStore: ObservableObject {
           Set(value.notes.map(\.id)).count == value.notes.count,
           value.notes.allSatisfy({ sectionIDs.contains($0.sectionID)
             && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
-      throw NSError(domain: "Pebble.Notes", code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: tr("The notes file contains invalid data.", "笔记文件包含无效数据。")])
+      throw fileError(tr("The notes file contains invalid data.", "笔记文件包含无效数据。"))
     }
-    return value
   }
 
   private func load() {

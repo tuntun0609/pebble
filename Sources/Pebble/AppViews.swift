@@ -676,6 +676,8 @@ struct SettingsView: View {
   @State private var recordingPanel = false
   @State private var loginEnabled = SMAppService.mainApp.status == .enabled
   @State private var loginError: String?
+  @State private var transferStatus: LocalizedMessage?
+  @State private var transferHasError = false
   var body: some View {
     Form {
       Section(tr("General", "通用")) {
@@ -753,8 +755,20 @@ struct SettingsView: View {
             .font(.caption).foregroundStyle(.orange)
         }
       }
-      Section(tr("Local files", "本地文件")) {
+      Section(tr("Data Management", "数据管理")) {
         Text(tr("Automatically saved. No account, sync, or tracking.", "自动保存，无需账号，没有同步或追踪。")).font(.callout).foregroundStyle(.secondary)
+        HStack {
+          Button(tr("Export Notes…", "导出笔记…")) { exportNotes() }
+          Button(tr("Import Notes…", "导入笔记…")) { importNotes() }
+        }
+        Text(tr("Export includes all notes and sections, including completed notes. App settings are excluded. Import merges data and keeps local notes with matching IDs.",
+                "导出包含全部笔记和分组（含已完成笔记），不包含应用设置。导入会合并数据，相同 ID 的笔记保留本地版本。"))
+          .font(.caption).foregroundStyle(.secondary)
+        if let transferStatus {
+          Text(transferStatus.text).font(.caption)
+            .foregroundStyle(transferHasError ? Color.red : Color.secondary)
+            .textSelection(.enabled)
+        }
         Button(tr("Show Notes in Finder", "在访达中显示笔记")) { NSWorkspace.shared.open(model.store.directory) }
       }
       Section(tr("Keyboard", "键盘快捷键")) {
@@ -773,6 +787,72 @@ struct SettingsView: View {
         capture.recordingPanelShortcut = false
       }
   }
+
+  private func exportNotes() {
+    let panel = NSSavePanel()
+    panel.title = tr("Export Notes", "导出笔记")
+    panel.allowedContentTypes = [.json]
+    panel.canCreateDirectories = true
+    panel.isExtensionHidden = false
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd-HHmmss"
+    panel.nameFieldStringValue = "Pebble-notes-\(formatter.string(from: Date())).json"
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do {
+      try model.store.exportNotes(to: url)
+      transferHasError = false
+      transferStatus = LocalizedMessage("All notes and sections were exported to \(url.lastPathComponent).",
+                                        "已将全部笔记和分组导出到 \(url.lastPathComponent)。")
+    } catch {
+      transferHasError = true
+      transferStatus = LocalizedMessage("Could not export notes: \(error.localizedDescription)",
+                                        "无法导出笔记：\(error.localizedDescription)")
+    }
+  }
+
+  private func importNotes() {
+    let panel = NSOpenPanel()
+    panel.title = tr("Import Notes", "导入笔记")
+    panel.allowedContentTypes = [.json]
+    panel.allowsMultipleSelection = false
+    panel.canChooseDirectories = false
+    panel.canChooseFiles = true
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do {
+      let preview = try model.store.prepareImport(from: url)
+      let alert = NSAlert()
+      alert.messageText = preview.hasChanges
+        ? tr("Import Notes?", "导入笔记？") : tr("Nothing New to Import", "没有需要新增的数据")
+      alert.informativeText = url.lastPathComponent + "\n\n" + tr(
+        "New notes: \(preview.addedNotes)\nNew sections: \(preview.addedSections)\nExisting notes skipped: \(preview.skippedNotes)",
+        "新增笔记：\(preview.addedNotes)\n新增分组：\(preview.addedSections)\n跳过已有笔记：\(preview.skippedNotes)")
+      if !preview.hasChanges {
+        alert.addButton(withTitle: tr("Close", "关闭"))
+        alert.runModal()
+        transferHasError = false
+        transferStatus = LocalizedMessage("Nothing new to import. Skipped \(preview.skippedNotes) existing notes.",
+                                          "没有需要新增的数据，已跳过 \(preview.skippedNotes) 条已有笔记。")
+        return
+      }
+      alert.informativeText += "\n\n" + tr(
+        "Local notes with matching IDs will be kept. A separate pre-import backup will be saved in the local data folder. You can undo the import with ⌘Z.",
+        "相同 ID 的笔记将保留本地版本。导入前会在本地数据文件夹保留一份独立备份，导入后可按 ⌘Z 撤销。")
+      alert.addButton(withTitle: tr("Import", "导入"))
+      alert.addButton(withTitle: tr("Cancel", "取消"))
+      guard alert.runModal() == .alertFirstButtonReturn else { return }
+      try model.store.importNotes(preview)
+      transferHasError = false
+      transferStatus = LocalizedMessage(
+        "Imported \(preview.addedNotes) notes and \(preview.addedSections) sections; skipped \(preview.skippedNotes) existing notes. The pre-import backup is in the local data folder. ⌘Z to undo.",
+        "已导入 \(preview.addedNotes) 条笔记、\(preview.addedSections) 个分组，跳过 \(preview.skippedNotes) 条已有笔记。导入前备份已保存在本地数据文件夹，可按 ⌘Z 撤销。")
+    } catch {
+      transferHasError = true
+      transferStatus = LocalizedMessage("Could not import notes. Current data was kept unchanged. \(error.localizedDescription)",
+                                        "无法导入笔记，当前数据未被修改。\(error.localizedDescription)")
+    }
+  }
+
   private func shortcutRow(_ title: String, _ keys: String) -> some View {
     HStack { Text(title); Spacer(); Text(keys).foregroundStyle(.secondary).font(.system(.caption, design: .monospaced)) }
   }
