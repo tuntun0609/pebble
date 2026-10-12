@@ -323,6 +323,8 @@ struct PebblePanelView: View {
 
   private func sectionView(_ section: NoteSection) -> some View {
     let notes = model.notes(in: section.id)
+    // Search results stay visible even when their section was collapsed before searching.
+    let isCollapsed = model.query.isEmpty && model.collapsedSectionIDs.contains(section.id)
     let sectionHeight = sectionHeights[section.id] ?? 1
     let reorderSection: (UUID, Bool) -> Void = { id, after in
       moveSection(id, relativeTo: section.id, after: after)
@@ -331,12 +333,39 @@ struct PebblePanelView: View {
     let isEndTargeted = dropPosition?.areaID == "end-\(section.id)"
     return VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 4) {
+        Button {
+          guard model.query.isEmpty else { return }
+          withAnimation(.easeInOut(duration: 0.18)) {
+            model.toggleSectionCollapsed(section.id)
+          }
+        } label: {
+          Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .frame(width: 18, height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.query.isEmpty)
+        .help(model.query.isEmpty
+          ? (isCollapsed ? tr("Expand section", "展开分组") : tr("Collapse section", "折叠分组"))
+          : tr("Search results expand sections", "搜索结果会展开分组"))
+        .accessibilityLabel(isCollapsed
+          ? tr("Expand section “\(section.name)”", "展开分组“\(section.name)”")
+          : tr("Collapse section “\(section.name)”", "折叠分组“\(section.name)”"))
         HStack(spacing: 8) {
           Image(systemName: "line.3.horizontal")
             .font(.system(size: 10)).foregroundStyle(.tertiary)
           Text(section.name.uppercased())
             .font(.system(size: 10, weight: .semibold)).tracking(0.8)
             .foregroundStyle(.secondary).lineLimit(1)
+          if isCollapsed {
+            Text("\(notes.count)")
+              .font(.system(size: 9, weight: .medium))
+              .foregroundStyle(.tertiary)
+              .padding(.horizontal, 5).padding(.vertical, 2)
+              .background(.secondary.opacity(0.08), in: Capsule())
+          }
           Rectangle().fill(.secondary.opacity(0.22)).frame(height: 1)
           if model.activeSectionID == section.id {
             Circle().fill(.secondary.opacity(0.4)).frame(width: 4, height: 4)
@@ -403,42 +432,44 @@ struct PebblePanelView: View {
                                    indicatorAtBottom: true, autoScroller: autoScroller, position: dropPositionBinding) { id, _ in
           moveNote(id, to: section.id, before: store.notes.first(where: { $0.sectionID == section.id })?.id)
         })
-      ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
-        noteCard(note)
-          .padding(.vertical, 4)
-          .transition(.asymmetric(
-            insertion: .identity,
-            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
-          ))
-          .modifier(ItemDropModifier(areaID: "note-\(note.id)", sectionID: section.id,
-                                     sectionHeight: sectionHeight, moveSection: reorderSection,
-                                     splitsArea: true, autoScroller: autoScroller, position: dropPositionBinding) { id, after in
-            // Visible neighbors may have filtered-out notes between them. Keep a visual no-op unchanged.
-            if let source = notes.firstIndex(where: { $0.id == id }) {
-              let insertion = index + (after ? 1 : 0)
-              if insertion == source || insertion == source + 1 { return }
-            }
-            let nextID = index + 1 < notes.count ? notes[index + 1].id : nil
-            moveNote(id, to: section.id, before: after ? nextID : note.id)
-          })
-          .id(note.id)
-      }
-      if notes.isEmpty {
-        Text(tr("Drop a note into this section", "拖到这里，移入此分组"))
-          .font(.system(size: 10))
-          .foregroundStyle(isEndTargeted ? Color.accentColor : Color.secondary.opacity(0.7))
-          .frame(maxWidth: .infinity).frame(height: 32)
-          .background(isEndTargeted ? Color.accentColor.opacity(0.06) : .clear,
-                      in: RoundedRectangle(cornerRadius: 10))
-          .overlay(RoundedRectangle(cornerRadius: 10)
-            .strokeBorder(isEndTargeted ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.18),
-                          style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-            .allowsHitTesting(false))
-          .modifier(ItemDropModifier(areaID: "end-\(section.id)", sectionID: section.id,
-                                     sectionHeight: sectionHeight, moveSection: reorderSection,
-                                     autoScroller: autoScroller, position: dropPositionBinding) { id, _ in
-            moveNote(id, to: section.id, before: nil)
-          })
+      if !isCollapsed {
+        ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
+          noteCard(note)
+            .padding(.vertical, 4)
+            .transition(.asymmetric(
+              insertion: .identity,
+              removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
+            ))
+            .modifier(ItemDropModifier(areaID: "note-\(note.id)", sectionID: section.id,
+                                       sectionHeight: sectionHeight, moveSection: reorderSection,
+                                       splitsArea: true, autoScroller: autoScroller, position: dropPositionBinding) { id, after in
+              // Visible neighbors may have filtered-out notes between them. Keep a visual no-op unchanged.
+              if let source = notes.firstIndex(where: { $0.id == id }) {
+                let insertion = index + (after ? 1 : 0)
+                if insertion == source || insertion == source + 1 { return }
+              }
+              let nextID = index + 1 < notes.count ? notes[index + 1].id : nil
+              moveNote(id, to: section.id, before: after ? nextID : note.id)
+            })
+            .id(note.id)
+        }
+        if notes.isEmpty {
+          Text(tr("Drop a note into this section", "拖到这里，移入此分组"))
+            .font(.system(size: 10))
+            .foregroundStyle(isEndTargeted ? Color.accentColor : Color.secondary.opacity(0.7))
+            .frame(maxWidth: .infinity).frame(height: 32)
+            .background(isEndTargeted ? Color.accentColor.opacity(0.06) : .clear,
+                        in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10)
+              .strokeBorder(isEndTargeted ? Color.accentColor.opacity(0.5) : Color.secondary.opacity(0.18),
+                            style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+              .allowsHitTesting(false))
+            .modifier(ItemDropModifier(areaID: "end-\(section.id)", sectionID: section.id,
+                                       sectionHeight: sectionHeight, moveSection: reorderSection,
+                                       autoScroller: autoScroller, position: dropPositionBinding) { id, _ in
+              moveNote(id, to: section.id, before: nil)
+            })
+        }
       }
     }
     .background {
@@ -449,6 +480,7 @@ struct PebblePanelView: View {
       }
     }
     .coordinateSpace(name: section.id)
+    .animation(.easeInOut(duration: 0.18), value: isCollapsed)
     .modifier(ItemDropModifier(areaID: "section-\(section.id)", sectionID: section.id,
                                dragType: sectionDragType, splitsArea: true, autoScroller: autoScroller,
                                position: dropPositionBinding) { id, after in

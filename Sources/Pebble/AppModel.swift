@@ -8,6 +8,14 @@ final class AppModel: ObservableObject {
   @Published var query = ""
   @Published var selection = Set<UUID>()
   @Published var expanded = Set<UUID>()
+  @Published var collapsedSectionIDs: Set<UUID> = Set(
+    (UserDefaults.standard.stringArray(forKey: "collapsedSectionIDs") ?? [])
+      .compactMap { UUID(uuidString: $0) }
+  ) {
+    didSet {
+      UserDefaults.standard.set(collapsedSectionIDs.map(\.uuidString).sorted(), forKey: "collapsedSectionIDs")
+    }
+  }
   @Published var activeSectionID: UUID
   @Published var draft = ""
   @Published var isCreatingSection = false
@@ -46,9 +54,17 @@ final class AppModel: ObservableObject {
   var colorScheme: ColorScheme? {
     appearance == "light" ? .light : appearance == "dark" ? .dark : nil
   }
+  func toggleSectionCollapsed(_ id: UUID) {
+    if collapsedSectionIDs.contains(id) { collapsedSectionIDs.remove(id) }
+    else { collapsedSectionIDs.insert(id) }
+    selection.formIntersection(Set(visibleNotes.map(\.id)))
+  }
   var activeSection: NoteSection { store.sections.first { $0.id == activeSectionID } ?? store.sections[0] }
   var visibleNotes: [Note] {
-    store.sections.flatMap { section in notes(in: section.id) }
+    store.sections.flatMap { section -> [Note] in
+      guard !query.isEmpty || !collapsedSectionIDs.contains(section.id) else { return [] }
+      return notes(in: section.id)
+    }
   }
   func notes(in section: UUID) -> [Note] {
     let matching = store.notes.filter {
