@@ -4,6 +4,8 @@ Pebble 是一款为 AI 工作中的零散想法设计的 macOS 菜单栏便笺�
 
 每个念头都像一颗鹅卵石，先收进 Pebble。笔记保存在本机，无需账号、云同步或追踪。
 
+![Pebble 主界面展示：先记下来，继续手头的事。图中分组和笔记均为虚构演示数据。](Resources/Brand/readme-hero.png)
+
 ## 首次打开前：手动允许运行
 
 当前发布版未使用付费的 Apple Developer ID 签名和公证，因此应用使用 ad-hoc 临时签名。首次打开时，macOS Gatekeeper 可能会拦截应用。建议先将 `Pebble.app` 移到 **应用程序**，再从以下方式中选择一种允许打开：
