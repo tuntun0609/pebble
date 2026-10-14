@@ -205,6 +205,7 @@ struct PlainTextEditor: NSViewRepresentable {
     scrollView.hasVerticalScroller = true
     scrollView.hasHorizontalScroller = false
     scrollView.autohidesScrollers = true
+    context.coordinator.scrollbars.attach(to: scrollView)
 
     let editor = PebbleTextView(frame: .zero)
     editor.delegate = context.coordinator
@@ -227,11 +228,13 @@ struct PlainTextEditor: NSViewRepresentable {
     editor.minSize = .zero
     editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     editor.textContainerInset = NSSize(width: 0, height: 2)
-    editor.textContainer?.widthTracksTextView = true
+    // PebbleTextView reserves space only on the right for the overlay thumb.
+    editor.textContainer?.widthTracksTextView = false
     editor.textContainer?.heightTracksTextView = false
     editor.textContainer?.lineFragmentPadding = 0
     editor.string = text
     scrollView.documentView = editor
+    editor.updateTextContainerWidth()
     configure(editor)
     return scrollView
   }
@@ -275,6 +278,7 @@ struct PlainTextEditor: NSViewRepresentable {
   final class Coordinator: NSObject, NSTextViewDelegate {
     var parent: PlainTextEditor
     var lastFocusToken = 0
+    let scrollbars = OverlayScrollbarConfiguration()
 
     init(_ parent: PlainTextEditor) { self.parent = parent }
 
@@ -295,13 +299,27 @@ private final class PebbleTextView: NSTextView {
   var onFocusChanged: ((Bool) -> Void)?
   var submitOnReturn = true
 
+  override func setFrameSize(_ newSize: NSSize) {
+    super.setFrameSize(newSize)
+    updateTextContainerWidth()
+  }
+
+  func updateTextContainerWidth() {
+    guard let textContainer, !textContainer.widthTracksTextView else { return }
+    let gutter = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
+    let width = max(0, bounds.width - gutter)
+    if textContainer.size.width != width {
+      textContainer.size = NSSize(width: width, height: textContainer.size.height)
+    }
+  }
+
   override func draw(_ dirtyRect: NSRect) {
     super.draw(dirtyRect)
     guard string.isEmpty, !placeholder.isEmpty else { return }
     let rectangle = NSRect(
       x: textContainerInset.width,
       y: textContainerInset.height,
-      width: max(0, bounds.width - textContainerInset.width * 2),
+      width: textContainer?.size.width ?? bounds.width,
       height: max(0, bounds.height - textContainerInset.height * 2)
     )
     (placeholder as NSString).draw(in: rectangle, withAttributes: [
@@ -410,18 +428,22 @@ struct NoteEditorView: View {
 
       if showPreview {
         ScrollView {
-          if draft.isEmpty {
-            Text(tr("Nothing to preview yet.", "还没有可预览的内容。"))
-              .foregroundStyle(.tertiary)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(20)
-          } else {
-            MarkdownNoteText(text: draft)
-              .font(.system(size: 14))
-              .textSelection(.enabled)
-              .padding(20)
+          Group {
+            if draft.isEmpty {
+              Text(tr("Nothing to preview yet.", "还没有可预览的内容。"))
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
+            } else {
+              MarkdownNoteText(text: draft)
+                .font(.system(size: 14))
+                .textSelection(.enabled)
+                .padding(20)
+            }
           }
+          .background(OverlayScrollAnchor().allowsHitTesting(false))
         }
+        .scrollIndicators(.visible)
       } else {
         PlainTextEditor(
           text: $draft,

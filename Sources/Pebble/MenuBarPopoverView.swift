@@ -67,8 +67,9 @@ struct MenuBarPopoverView: View {
         .padding(.horizontal, 13)
         .padding(.top, 4)
         .padding(.bottom, 13)
+        .background(OverlayScrollAnchor().allowsHitTesting(false))
       }
-      .scrollIndicators(.hidden)
+      .scrollIndicators(.visible)
     }
     .frame(width: 360, height: 540)
     // NSPopover draws the background, corners, border, and arrow as one surface.

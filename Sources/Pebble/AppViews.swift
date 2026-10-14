@@ -206,8 +206,9 @@ struct PebblePanelView: View {
           }
           .padding(.horizontal, 13).padding(.top, 10).padding(.bottom, 16)
           .background(DragScrollAnchor(scroller: autoScroller).allowsHitTesting(false))
+          .background(OverlayScrollAnchor().allowsHitTesting(false))
         }
-        .scrollIndicators(.hidden)
+        .scrollIndicators(.visible)
         .onChange(of: model.selection) { _, selected in
           if let last = model.visibleNotes.last(where: { selected.contains($0.id) }) {
             withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo(last.id, anchor: nil) }
