@@ -168,6 +168,7 @@ struct PebblePanelView: View {
   @FocusState private var searchFocused: Bool
   @FocusState private var newSectionFocused: Bool
   @State private var newSectionName = ""
+  @State private var composerFocused = false
   @State private var dropPosition: ItemDropPosition?
   @State private var draggedSectionID: UUID?
   @State private var sectionHeights: [UUID: CGFloat] = [:]
@@ -593,7 +594,17 @@ struct PebblePanelView: View {
   }
 
   private var composer: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    let canSubmit = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    return VStack(alignment: .leading, spacing: 10) {
+      if model.isCreatingSection { newSectionForm }
+      PlainTextEditor(text: $model.draft,
+                      placeholder: tr("Capture a thought…", "记下此刻的想法…"),
+                      onSubmit: { model.submitDraft() },
+                      onCancel: { model.onFocusCards?(); model.onHide?() },
+                      onFocusChanged: { composerFocused = $0 },
+                      focusToken: model.composerFocus,
+                      contentHeightRange: 44...150)
+        .accessibilityLabel(tr("Add a note or a prompt", "添加笔记或提示词"))
       HStack(spacing: 8) {
         Menu {
           ForEach(store.sections) { section in
@@ -608,34 +619,46 @@ struct PebblePanelView: View {
             model.isCreatingSection = true
           }
         } label: {
-          (Text(tr("Section", "分组")).foregroundColor(.secondary)
-            + Text("  \(model.activeSection.name)").foregroundColor(.primary).fontWeight(.medium))
-            .font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
+          Label {
+            Text(model.activeSection.name).lineLimit(1).truncationMode(.tail)
+          } icon: {
+            Image(systemName: "folder")
+          }
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
         }
-        .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
-        .padding(.horizontal, 10).frame(height: 28)
-        .overlay(Capsule().strokeBorder(.primary.opacity(scheme == .dark ? 0.22 : 0.14), lineWidth: 1).allowsHitTesting(false))
-        .help(tr("Choose section", "选择分组"))
+        .menuStyle(.borderlessButton).menuIndicator(.visible)
+        .frame(maxWidth: 190, alignment: .leading).frame(height: 28)
+        .help(tr("Save to \(model.activeSection.name)", "保存到“\(model.activeSection.name)”"))
         .accessibilityLabel(tr("Choose section", "选择分组"))
         .accessibilityValue(model.activeSection.name)
         Spacer(minLength: 0)
+        Button { model.submitDraft() } label: {
+          HStack(spacing: 5) {
+            Text(tr("Save", "保存"))
+            Image(systemName: "return").font(.system(size: 11, weight: .medium))
+          }
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(canSubmit ? Color.white : Color.secondary)
+          .padding(.horizontal, 9).frame(height: 28)
+          .background(canSubmit ? Color.accentColor : Color.primary.opacity(0.06),
+                      in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+          .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .disabled(!canSubmit)
+        .accessibilityLabel(tr("Save note", "保存笔记"))
+        .help(tr("Save note (Return); Shift-Return for a new line", "保存笔记（Return）；Shift-Return 换行"))
       }
-      .padding(.horizontal, 13).padding(.top, 11)
-      VStack(alignment: .leading, spacing: 4) {
-        if model.isCreatingSection { newSectionForm }
-        PlainTextEditor(text: $model.draft,
-                        placeholder: model.activeSection.name == "Notes" ? tr("Add a note or a prompt", "添加笔记或提示词") : tr("Add to \(model.activeSection.name)", "添加到“\(model.activeSection.name)”"),
-                        onSubmit: { model.submitDraft() },
-                        onCancel: { model.onFocusCards?(); model.onHide?() },
-                        focusToken: model.composerFocus)
-          .frame(height: 55)
-          .accessibilityLabel(tr("Add a note or a prompt", "添加笔记或提示词"))
-      }.padding(.horizontal, 13).padding(.top, 8).padding(.bottom, 9)
     }
-      .background(.background.opacity(0.86))
-      .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
-      .overlay(RoundedRectangle(cornerRadius: 21).strokeBorder(.primary.opacity(0.035), lineWidth: 1))
-      .shadow(color: .black.opacity(0.04), radius: 8, y: 3)
+    .padding(12)
+    .background(.background.opacity(0.86))
+    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+      .strokeBorder(composerFocused ? Color.accentColor.opacity(0.55) : Color.primary.opacity(0.06), lineWidth: 1)
+      .allowsHitTesting(false))
+    .shadow(color: .black.opacity(0.025), radius: 3, y: 2)
   }
 
   private var newSectionForm: some View {

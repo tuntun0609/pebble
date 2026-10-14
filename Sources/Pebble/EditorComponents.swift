@@ -195,6 +195,8 @@ struct PlainTextEditor: NSViewRepresentable {
   var onFocusChanged: ((Bool) -> Void)? = nil
   var focusToken: Int = 0
   var submitOnReturn: Bool = true
+  // Opt in for the composer; other editors keep their parent-provided height.
+  var contentHeightRange: ClosedRange<CGFloat>? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -260,6 +262,24 @@ struct PlainTextEditor: NSViewRepresentable {
         window.makeFirstResponder(editor)
       }
     }
+  }
+
+  func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+    guard let range = contentHeightRange, let width = proposal.width, width.isFinite, width > 0 else { return nil }
+    // Measure separately so sizing never changes the live editor's selection,
+    // marked text, undo history, or text container during a SwiftUI layout pass.
+    let gutter = NSScroller.scrollerWidth(for: .regular, scrollerStyle: .overlay)
+    let container = NSTextContainer(size: NSSize(width: max(1, width - gutter), height: .greatestFiniteMagnitude))
+    container.lineFragmentPadding = 0
+    let layout = NSLayoutManager()
+    let storage = NSTextStorage(string: text, attributes: [.font: NSFont.systemFont(ofSize: fontSize)])
+    storage.addLayoutManager(layout)
+    layout.addTextContainer(container)
+    layout.ensureLayout(for: container)
+    // The extra fragment accounts for the caret line after a trailing newline.
+    let textHeight = max(layout.usedRect(for: container).maxY, layout.extraLineFragmentRect.maxY)
+    let height = min(range.upperBound, max(range.lowerBound, ceil(textHeight) + 4))
+    return CGSize(width: width, height: height)
   }
 
   private func configure(_ editor: PebbleTextView) {
