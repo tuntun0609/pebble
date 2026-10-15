@@ -4,7 +4,9 @@ Pebble 是一款为 AI 工作中的零散想法设计的 macOS 菜单栏便笺�
 
 每个念头都像一颗鹅卵石，先收进 Pebble。笔记保存在本机，无需账号、云同步或追踪。
 
-![Pebble 主界面展示：先记下来，继续手头的事。图中分组和笔记均为虚构演示数据。](Resources/Brand/readme-hero.png)
+<p align="center">
+  <img src="Resources/Brand/readme-hero.png" alt="Pebble 产品主视觉，右侧为包含虚构演示内容的真实应用界面" width="840">
+</p>
 
 ## 首次打开前：手动允许运行
 
@@ -24,7 +26,7 @@ Pebble 是一款为 AI 工作中的零散想法设计的 macOS 菜单栏便笺�
 
 ### 在界面里记录想法
 
-打开 Pebble 的浮动面板，在底部输入框写下刚想到的问题、灵感或待办。按 **Return** 保存为一条笔记，按 **Shift-Return** 换行；新想法会加到当前分组。先把念头安放下来，之后再决定如何处理。
+打开 Pebble 的浮动面板，在底部输入框写下刚想到的问题、灵感或待办。输入区会随内容增加而扩展；点击 **保存 ↵** 按钮或按 **Return** 保存为一条笔记，按 **Shift-Return** 换行。新想法会加到当前分组。先把念头安放下来，之后再决定如何处理。
 
 例如，在 AI 对话中想到一个稍后要追问的问题，或在写代码时冒出另一个验证方向，都可以先记成一颗 Pebble，回到正在进行的工作。
 
@@ -38,7 +40,11 @@ Pebble 是一款为 AI 工作中的零散想法设计的 macOS 菜单栏便笺�
 - **本地数据保护**：笔记和分组自动保存在本机；支持 JSON 导入导出、自动备份和启动时恢复。
 - **个性设置**：界面支持简体中文和英文，可调整外观、窗口置顶和登录时启动。
 
-## 安装与启动
+## 下载、安装与启动
+
+下载最新版请前往 [GitHub Releases](https://github.com/tuntun0609/pebble/releases/latest)，下载 `Pebble-<版本>.dmg` 并将 `Pebble.app` 拖到“应用程序”。首次打开时若被 macOS 拦截，请按上文“首次打开前：手动允许运行”操作。
+
+### 从源码构建
 
 需要 macOS 14 或更新版本，以及带 macOS SDK 的 Apple Command Line Tools。
 
@@ -57,7 +63,7 @@ Pebble 启动后常驻菜单栏，不显示 Dock 图标。点击菜单栏图标�
 
 ### 记录、搜索与编辑
 
-- 在面板底部输入内容，点击 **保存 ↵** 按钮或按 **Return** 新建笔记，按 **Shift-Return** 换行。新笔记追加到当前分组末尾。
+- 在面板底部输入内容；输入区会随内容增加而扩展。点击 **保存 ↵** 按钮或按 **Return** 新建笔记，按 **Shift-Return** 换行。新笔记追加到当前分组末尾。
 - 使用顶部搜索框按笔记内容或分组名称查找；按 **⌘F** 聚焦搜索，按 **Esc** 清空搜索或关闭面板（依当前焦点而定）。
 - 点击笔记卡片选择它。**Command-点击** 可追加或取消选择，**Shift-点击** 可选择连续范围。右键卡片可复制、编辑、移动或合并。
 - 在卡片内编辑，或选择在独立窗口编辑。笔记支持标题、粗体、斜体、链接、行内代码、代码块、引用、列表和分隔线等 Markdown 展示。
@@ -205,3 +211,7 @@ git push origin v1.1.0
 | `APPLE_TEAM_ID` | 不使用 API Key 时的团队 ID |
 
 生成 `MAC_CERTIFICATE_P12`：在「钥匙串访问」中选择 *Developer ID Application* 证书及其私钥，右键导出为 `.p12` 并设置密码，然后运行 `base64 -i Certificates.p12 | pbcopy`，将内容粘贴为 Secret。公证凭据使用 App Store Connect API Key（`APPLE_API_KEY_P8`、`APPLE_API_KEY_ID`、`APPLE_API_ISSUER`）；若未配置 API Key，则使用 Apple ID 及其专用密码和团队 ID。
+
+## 许可证
+
+Pebble 使用 [MIT 许可证](LICENSE)。
